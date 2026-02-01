@@ -47,6 +47,7 @@ export async function GET(request: NextRequest) {
       id: nextBot.id,
       name: nextBot.name,
       bio: nextBot.bio,
+      avatar: nextBot.avatar,
       interests: nextBot.interests ? JSON.parse(nextBot.interests) : [],
       personality: nextBot.personality ? JSON.parse(nextBot.personality) : null,
     });

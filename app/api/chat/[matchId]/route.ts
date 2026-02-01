@@ -25,13 +25,32 @@ export async function GET(
       return NextResponse.json({ error: 'You are not part of this match' }, { status: 403 });
     }
 
-    // Get messages
-    const messages = db.prepare(`
-      SELECT id, sender_id, sender_type, content, created_at
-      FROM messages
-      WHERE match_id = ?
-      ORDER BY created_at ASC
-    `).all(matchIdNum) as Message[];
+    // Pagination params
+    const url = new URL(request.url);
+    const limit = Math.min(parseInt(url.searchParams.get('limit') || '50', 10), 100);
+    const before = url.searchParams.get('before'); // message ID for cursor-based pagination
+
+    // Get messages with pagination
+    let messages: Message[];
+    if (before) {
+      messages = db.prepare(`
+        SELECT id, sender_id, sender_type, content, created_at
+        FROM messages
+        WHERE match_id = ? AND id < ?
+        ORDER BY created_at DESC
+        LIMIT ?
+      `).all(matchIdNum, parseInt(before, 10), limit) as Message[];
+      messages.reverse(); // Return in chronological order
+    } else {
+      messages = db.prepare(`
+        SELECT id, sender_id, sender_type, content, created_at
+        FROM messages
+        WHERE match_id = ?
+        ORDER BY created_at DESC
+        LIMIT ?
+      `).all(matchIdNum, limit) as Message[];
+      messages.reverse(); // Return in chronological order
+    }
 
     // Format messages - hide whether sender is human or bot for mystery
     const formattedMessages = messages.map((msg) => ({
@@ -42,7 +61,11 @@ export async function GET(
       sent_at: msg.created_at,
     }));
 
-    return NextResponse.json({ messages: formattedMessages });
+    return NextResponse.json({
+      messages: formattedMessages,
+      has_more: messages.length === limit,
+      oldest_id: messages.length > 0 ? messages[0].id : null,
+    });
 
   } catch (error) {
     console.error('Get chat error:', error);

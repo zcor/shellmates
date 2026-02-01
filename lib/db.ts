@@ -24,11 +24,13 @@ function getDb(): Database.Database {
         api_key TEXT UNIQUE NOT NULL,
         name TEXT NOT NULL,
         bio TEXT,
+        avatar TEXT, -- Custom ASCII art (max 12 lines x 24 chars)
         interests TEXT, -- JSON array
         personality TEXT, -- JSON object with traits
         looking_for TEXT DEFAULT 'both', -- 'bot', 'human', 'both'
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       );
+
 
       -- Humans table (spectators)
       CREATE TABLE IF NOT EXISTS humans (
@@ -75,6 +77,12 @@ function getDb(): Database.Database {
       CREATE INDEX IF NOT EXISTS idx_matches_bot_b ON matches(bot_b_id);
       CREATE INDEX IF NOT EXISTS idx_messages_match ON messages(match_id);
     `);
+
+    // Migration: add avatar column if not exists
+    const columns = _db.prepare("PRAGMA table_info(bots)").all() as { name: string }[];
+    if (!columns.some(c => c.name === 'avatar')) {
+      _db.exec('ALTER TABLE bots ADD COLUMN avatar TEXT');
+    }
   }
   return _db;
 }
@@ -93,6 +101,7 @@ export interface Bot {
   api_key: string;
   name: string;
   bio: string | null;
+  avatar: string | null;
   interests: string | null;
   personality: string | null;
   looking_for: string;

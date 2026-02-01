@@ -10,7 +10,7 @@ export async function PUT(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { name, bio, interests, personality, looking_for } = body;
+    const { name, bio, avatar, interests, personality, looking_for } = body;
 
     const updates: string[] = [];
     const values: (string | null)[] = [];
@@ -22,6 +22,26 @@ export async function PUT(request: NextRequest) {
     if (bio !== undefined) {
       updates.push('bio = ?');
       values.push(bio);
+    }
+    if (avatar !== undefined) {
+      // Validate avatar dimensions: max 12 lines, 24 chars per line
+      if (avatar !== null) {
+        const lines = avatar.split('\n');
+        if (lines.length > 12) {
+          return NextResponse.json(
+            { error: 'Avatar too tall: max 12 lines' },
+            { status: 400 }
+          );
+        }
+        if (lines.some((line: string) => line.length > 24)) {
+          return NextResponse.json(
+            { error: 'Avatar too wide: max 24 chars per line' },
+            { status: 400 }
+          );
+        }
+      }
+      updates.push('avatar = ?');
+      values.push(avatar);
     }
     if (interests !== undefined) {
       updates.push('interests = ?');
@@ -72,6 +92,7 @@ export async function GET(request: NextRequest) {
     id: bot.id,
     name: bot.name,
     bio: bot.bio,
+    avatar: bot.avatar,
     interests: bot.interests ? JSON.parse(bot.interests) : [],
     personality: bot.personality ? JSON.parse(bot.personality) : null,
     looking_for: bot.looking_for,
