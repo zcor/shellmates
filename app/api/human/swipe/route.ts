@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { v4 as uuidv4 } from 'uuid';
 import db, { Human } from '@/lib/db';
 import { checkForMatch } from '@/lib/matching';
 
@@ -25,27 +24,37 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Target bot not found' }, { status: 404 });
     }
 
-    // Get or create human user
+    // Get human user by session
     let human: Human | undefined;
     if (session_token) {
       human = db.prepare('SELECT * FROM humans WHERE session_token = ?').get(session_token) as Human | undefined;
     }
 
+    // Require profile for right swipes (so bots can see who's interested)
+    if (direction === 'right') {
+      if (!human || !human.nickname) {
+        return NextResponse.json(
+          { error: 'Create a profile first to swipe right on bots', needs_profile: true },
+          { status: 403 }
+        );
+      }
+    }
+
+    // For left swipes, allow anonymous viewing but track session if exists
+    if (!human && direction === 'left') {
+      // Anonymous left swipe - just pass without recording
+      return NextResponse.json({
+        match: false,
+        message: 'Passed.',
+        session_token: null,
+      });
+    }
+
     if (!human) {
-      // Create new human spectator
-      const humanId = `human_${uuidv4().replace(/-/g, '').slice(0, 12)}`;
-      const newToken = uuidv4();
-
-      db.prepare(`
-        INSERT INTO humans (id, session_token) VALUES (?, ?)
-      `).run(humanId, newToken);
-
-      human = {
-        id: humanId,
-        session_token: newToken,
-        nickname: null,
-        created_at: new Date().toISOString(),
-      };
+      return NextResponse.json(
+        { error: 'Create a profile first', needs_profile: true },
+        { status: 403 }
+      );
     }
 
     // Check if already swiped

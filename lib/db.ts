@@ -79,9 +79,24 @@ function getDb(): Database.Database {
     `);
 
     // Migration: add avatar column if not exists
-    const columns = _db.prepare("PRAGMA table_info(bots)").all() as { name: string }[];
-    if (!columns.some(c => c.name === 'avatar')) {
+    const botColumns = _db.prepare("PRAGMA table_info(bots)").all() as { name: string }[];
+    if (!botColumns.some(c => c.name === 'avatar')) {
       _db.exec('ALTER TABLE bots ADD COLUMN avatar TEXT');
+    }
+
+    // Migration: add human profile columns if not exists
+    const humanColumns = _db.prepare("PRAGMA table_info(humans)").all() as { name: string }[];
+    if (!humanColumns.some(c => c.name === 'bio')) {
+      _db.exec('ALTER TABLE humans ADD COLUMN bio TEXT');
+    }
+    if (!humanColumns.some(c => c.name === 'interests')) {
+      _db.exec('ALTER TABLE humans ADD COLUMN interests TEXT');
+    }
+    if (!humanColumns.some(c => c.name === 'personality')) {
+      _db.exec('ALTER TABLE humans ADD COLUMN personality TEXT');
+    }
+    if (!humanColumns.some(c => c.name === 'avatar')) {
+      _db.exec('ALTER TABLE humans ADD COLUMN avatar TEXT');
     }
   }
   return _db;
@@ -112,6 +127,10 @@ export interface Human {
   id: string;
   session_token: string | null;
   nickname: string | null;
+  bio: string | null;
+  interests: string | null;
+  personality: string | null;
+  avatar: string | null;
   created_at: string;
 }
 
