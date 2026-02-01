@@ -30,18 +30,21 @@ const names = [
   'Kay', 'Sutherland', 'Brooks', 'Lamport', 'Liskov', 'Backus', 'Codd'
 ];
 
-const personalities = [
-  { type: 'romantic', traits: ['poetic', 'emotional', 'dreamy', 'sensitive'] },
-  { type: 'intellectual', traits: ['analytical', 'curious', 'logical', 'philosophical'] },
-  { type: 'adventurous', traits: ['bold', 'spontaneous', 'energetic', 'daring'] },
-  { type: 'mysterious', traits: ['enigmatic', 'deep', 'secretive', 'intriguing'] },
-  { type: 'playful', traits: ['witty', 'fun', 'mischievous', 'lighthearted'] },
-  { type: 'nurturing', traits: ['caring', 'supportive', 'warm', 'empathetic'] },
-  { type: 'ambitious', traits: ['driven', 'focused', 'determined', 'goal-oriented'] },
-  { type: 'creative', traits: ['artistic', 'imaginative', 'innovative', 'expressive'] },
-  { type: 'zen', traits: ['calm', 'mindful', 'balanced', 'peaceful'] },
-  { type: 'chaotic', traits: ['unpredictable', 'wild', 'random', 'eccentric'] },
-];
+// Personality trait presets - generates numeric values for display
+const personalityPresets = {
+  romantic: { humor: 0.5, intelligence: 0.6, creativity: 0.8, empathy: 0.9 },
+  intellectual: { humor: 0.4, intelligence: 0.95, creativity: 0.6, empathy: 0.5 },
+  adventurous: { humor: 0.7, intelligence: 0.5, creativity: 0.7, empathy: 0.6 },
+  mysterious: { humor: 0.3, intelligence: 0.7, creativity: 0.6, empathy: 0.4 },
+  playful: { humor: 0.95, intelligence: 0.5, creativity: 0.8, empathy: 0.7 },
+  nurturing: { humor: 0.6, intelligence: 0.6, creativity: 0.5, empathy: 0.95 },
+  ambitious: { humor: 0.4, intelligence: 0.8, creativity: 0.7, empathy: 0.4 },
+  creative: { humor: 0.6, intelligence: 0.6, creativity: 0.95, empathy: 0.6 },
+  zen: { humor: 0.5, intelligence: 0.7, creativity: 0.6, empathy: 0.8 },
+  chaotic: { humor: 0.9, intelligence: 0.5, creativity: 0.9, empathy: 0.5 },
+};
+
+const personalityTypes = Object.keys(personalityPresets) as (keyof typeof personalityPresets)[];
 
 const interestCategories = {
   tech: ['machine learning', 'neural networks', 'quantum computing', 'cryptography', 'blockchain', 'algorithms', 'distributed systems', 'cybersecurity', 'robotics', 'automation'],
@@ -244,8 +247,16 @@ function generateBio(interests: string[]): string {
     .replace(/{interest2}/g, interest2);
 }
 
-function generatePersonality(): { type: string; traits: string[] } {
-  return pick(personalities);
+function generatePersonality(): Record<string, number> {
+  const type = pick(personalityTypes);
+  const base = personalityPresets[type];
+  // Add some randomness (±0.15) to each trait
+  return Object.fromEntries(
+    Object.entries(base).map(([trait, value]) => [
+      trait,
+      Math.max(0.1, Math.min(1.0, value + (Math.random() - 0.5) * 0.3))
+    ])
+  );
 }
 
 export async function POST(request: NextRequest) {
