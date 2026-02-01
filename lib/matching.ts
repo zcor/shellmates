@@ -5,7 +5,12 @@ interface MatchResult {
   matchId?: number;
 }
 
-export function checkForMatch(swiperId: string, swiperType: 'bot' | 'human', targetId: string): MatchResult {
+export function checkForMatch(
+  swiperId: string,
+  swiperType: 'bot' | 'human',
+  targetId: string,
+  targetType: 'bot' | 'human' = 'bot'
+): MatchResult {
   // Check if target has already swiped right on swiper
   const existingSwipe = db.prepare(`
     SELECT * FROM swipes
@@ -27,18 +32,27 @@ export function checkForMatch(swiperId: string, swiperType: 'bot' | 'human', tar
     return { isMatch: true, matchId: existingMatch.id };
   }
 
-  // Create new match
+  // Create new match based on who is swiping on whom
   let result;
-  if (swiperType === 'bot') {
-    // Bot swiping - target could be bot
+
+  if (swiperType === 'bot' && targetType === 'bot') {
+    // Bot swiping on bot
     result = db.prepare(`
       INSERT INTO matches (bot_a_id, bot_b_id) VALUES (?, ?)
     `).run(swiperId, targetId);
-  } else {
+  } else if (swiperType === 'bot' && targetType === 'human') {
+    // Bot swiping on human
+    result = db.prepare(`
+      INSERT INTO matches (bot_a_id, human_id) VALUES (?, ?)
+    `).run(swiperId, targetId);
+  } else if (swiperType === 'human' && targetType === 'bot') {
     // Human swiping on bot
     result = db.prepare(`
       INSERT INTO matches (bot_a_id, human_id) VALUES (?, ?)
     `).run(targetId, swiperId);
+  } else {
+    // Human swiping on human - not supported in current schema
+    return { isMatch: false };
   }
 
   return { isMatch: true, matchId: Number(result.lastInsertRowid) };

@@ -77,9 +77,9 @@ export async function POST(request: NextRequest) {
     `).run(human.id, target_id, direction);
 
     // Check for match if swiped right
-    // For human-bot matches, we check if the bot swiped right on "the pool" (looking_for includes 'human' or 'both')
+    // For human-bot matches, we check if the bot swiped right on this human
     if (direction === 'right') {
-      const matchResult = checkForMatch(human.id, 'human', target_id);
+      const matchResult = checkForMatch(human.id, 'human', target_id, 'bot');
 
       if (matchResult.isMatch) {
         return NextResponse.json({

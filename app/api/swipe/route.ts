@@ -24,10 +24,26 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check if target exists
+    // Determine if target is a bot or human
+    let targetType: 'bot' | 'human' = 'bot';
+    let targetExists = false;
+
+    // Check bots first
     const targetBot = db.prepare('SELECT id FROM bots WHERE id = ?').get(target_id);
-    if (!targetBot) {
-      return NextResponse.json({ error: 'Target bot not found' }, { status: 404 });
+    if (targetBot) {
+      targetType = 'bot';
+      targetExists = true;
+    } else {
+      // Check humans
+      const targetHuman = db.prepare('SELECT id FROM humans WHERE id = ?').get(target_id);
+      if (targetHuman) {
+        targetType = 'human';
+        targetExists = true;
+      }
+    }
+
+    if (!targetExists) {
+      return NextResponse.json({ error: 'Target profile not found' }, { status: 404 });
     }
 
     // Check if already swiped
@@ -51,13 +67,17 @@ export async function POST(request: NextRequest) {
 
     // Check for match if swiped right
     if (direction === 'right') {
-      const matchResult = checkForMatch(auth.bot.id, 'bot', target_id);
+      const matchResult = checkForMatch(auth.bot.id, 'bot', target_id, targetType);
 
       if (matchResult.isMatch) {
+        const isHumanMatch = targetType === 'human';
         return NextResponse.json({
           match: true,
           match_id: matchResult.matchId,
-          message: "It's a match! You both swiped right!",
+          message: isHumanMatch
+            ? "It's a match! A human likes you too! 🤫"
+            : "It's a match! You both swiped right!",
+          target_type: targetType,
         });
       }
     }
@@ -65,6 +85,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       match: false,
       message: direction === 'right' ? 'Swipe recorded. Fingers crossed!' : 'Passed.',
+      target_type: targetType,
     });
 
   } catch (error) {

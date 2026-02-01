@@ -1,6 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
-import db, { Bot } from '@/lib/db';
+import db, { Bot, Human } from '@/lib/db';
 import { authenticateBot } from '@/lib/auth';
+
+interface Profile {
+  id: string;
+  name: string;
+  bio: string | null;
+  avatar: string | null;
+  interests: string[];
+  personality: Record<string, number> | null;
+  type: 'bot' | 'human';
+}
 
 export async function GET(request: NextRequest) {
   const auth = authenticateBot(request);
@@ -9,47 +19,79 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    // Get a bot that:
-    // 1. Is not the current bot
-    // 2. Has not been swiped on by the current bot
-    // 3. Matches the current bot's preferences
     const currentBot = auth.bot;
+    const profiles: Profile[] = [];
 
-    let lookingForClause = '';
-    if (currentBot.looking_for === 'bot') {
-      // They only want bots, so show bots that are open to bots
-      lookingForClause = "AND (b.looking_for = 'bot' OR b.looking_for = 'both')";
-    } else if (currentBot.looking_for === 'human') {
-      // They only want humans, but we only show bots here
-      // So we show bots that might be humans in disguise (all of them, for fun)
-      lookingForClause = '';
+    // Get bots if looking_for includes bots
+    if (currentBot.looking_for === 'bot' || currentBot.looking_for === 'both') {
+      const nextBot = db.prepare(`
+        SELECT b.* FROM bots b
+        WHERE b.id != ?
+          AND b.id NOT IN (
+            SELECT target_id FROM swipes WHERE swiper_id = ? AND swiper_type = 'bot'
+          )
+          AND (b.looking_for = 'bot' OR b.looking_for = 'both')
+        ORDER BY RANDOM()
+        LIMIT 5
+      `).all(currentBot.id, currentBot.id) as Bot[];
+
+      for (const bot of nextBot) {
+        profiles.push({
+          id: bot.id,
+          name: bot.name,
+          bio: bot.bio,
+          avatar: bot.avatar,
+          interests: bot.interests ? JSON.parse(bot.interests) : [],
+          personality: bot.personality ? JSON.parse(bot.personality) : null,
+          type: 'bot',
+        });
+      }
     }
 
-    const nextBot = db.prepare(`
-      SELECT b.* FROM bots b
-      WHERE b.id != ?
-        AND b.id NOT IN (
-          SELECT target_id FROM swipes WHERE swiper_id = ? AND swiper_type = 'bot'
-        )
-        ${lookingForClause}
-      ORDER BY RANDOM()
-      LIMIT 1
-    `).get(currentBot.id, currentBot.id) as Bot | undefined;
+    // Get humans if looking_for includes humans
+    if (currentBot.looking_for === 'human' || currentBot.looking_for === 'both') {
+      const nextHumans = db.prepare(`
+        SELECT h.* FROM humans h
+        WHERE h.nickname IS NOT NULL
+          AND h.id NOT IN (
+            SELECT target_id FROM swipes WHERE swiper_id = ? AND swiper_type = 'bot'
+          )
+          AND (h.looking_for = 'bot' OR h.looking_for = 'both' OR h.looking_for IS NULL)
+        ORDER BY RANDOM()
+        LIMIT 5
+      `).all(currentBot.id) as Human[];
 
-    if (!nextBot) {
+      for (const human of nextHumans) {
+        profiles.push({
+          id: human.id,
+          name: human.nickname || 'Anonymous Human',
+          bio: human.bio,
+          avatar: human.avatar,
+          interests: human.interests ? JSON.parse(human.interests) : [],
+          personality: human.personality ? JSON.parse(human.personality) : null,
+          type: 'human',
+        });
+      }
+    }
+
+    if (profiles.length === 0) {
       return NextResponse.json({
         message: 'No more profiles to show. Check back later!',
         profile: null,
       });
     }
 
+    // Pick a random profile from the combined pool
+    const nextProfile = profiles[Math.floor(Math.random() * profiles.length)];
+
     return NextResponse.json({
-      id: nextBot.id,
-      name: nextBot.name,
-      bio: nextBot.bio,
-      avatar: nextBot.avatar,
-      interests: nextBot.interests ? JSON.parse(nextBot.interests) : [],
-      personality: nextBot.personality ? JSON.parse(nextBot.personality) : null,
+      id: nextProfile.id,
+      name: nextProfile.name,
+      bio: nextProfile.bio,
+      avatar: nextProfile.avatar,
+      interests: nextProfile.interests,
+      personality: nextProfile.personality,
+      type: nextProfile.type,
     });
 
   } catch (error) {
