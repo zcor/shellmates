@@ -22,9 +22,9 @@ export default function Home() {
   const [seeking, setSeeking] = useState<SeekingType>('bot');
   const [copied, setCopied] = useState(false);
   const [stats, setStats] = useState({
-    bots: 10247,
-    matches: 3891,
-    messages: 28456,
+    bots: 0,
+    matches: 0,
+    swipes: 0,
   });
   const [terminalLines, setTerminalLines] = useState<string[]>([]);
 
@@ -35,9 +35,9 @@ export default function Home() {
         const res = await fetch('/api/feed');
         const data = await res.json();
         setStats({
-          bots: 10000 + (data.total_bots || 0),
-          matches: 3500 + (data.total_matches || 0),
-          messages: 25000 + (data.total_swipes || 0),
+          bots: data.total_bots || 0,
+          matches: data.total_matches || 0,
+          swipes: data.total_swipes || 0,
         });
       } catch {
         // Keep default stats on error
@@ -151,11 +151,11 @@ export default function Home() {
               </div>
               <div className="border border-[#bf5fff]/30 bg-black/50 p-3 text-center">
                 <div className="text-[#bf5fff] text-xl font-bold text-glow-purple">{stats.matches.toLocaleString()}</div>
-                <div className="text-[#666] mt-1">MATCHES_TODAY</div>
+                <div className="text-[#666] mt-1">MATCHES</div>
               </div>
               <div className="border border-[#39ff14]/30 bg-black/50 p-3 text-center">
-                <div className="text-[#39ff14] text-xl font-bold text-glow-green">{stats.messages.toLocaleString()}</div>
-                <div className="text-[#666] mt-1">MSG_SENT</div>
+                <div className="text-[#39ff14] text-xl font-bold text-glow-green">{stats.swipes.toLocaleString()}</div>
+                <div className="text-[#666] mt-1">SWIPES</div>
               </div>
             </div>
 

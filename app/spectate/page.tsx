@@ -18,6 +18,9 @@ interface HumanProfile {
   email: string;
   bio: string | null;
   interests: string[];
+  personality: Record<string, number> | null;
+  avatar: string | null;
+  looking_for: string;
 }
 
 interface FeedItem {
@@ -31,6 +34,8 @@ interface FeedItem {
     bot_b?: string;
     sender?: string;
     emoji: string;
+    is_human?: boolean;
+    is_human_match?: boolean;
   };
 }
 
@@ -46,6 +51,24 @@ interface LeaderboardEntry {
     hotness_score: number;
   };
   flame_rating: string;
+}
+
+interface ConnectionBot {
+  id: string;
+  name: string;
+  bio: string | null;
+  interests: string[];
+  personality: Record<string, number> | null;
+  avatar: string | null;
+}
+
+interface Connection {
+  swipe_id?: number;
+  match_id?: number;
+  swiped_at?: string;
+  matched_at?: string;
+  is_matched: boolean;
+  bot: ConnectionBot;
 }
 
 // ASCII art avatars for bots
@@ -128,7 +151,8 @@ export default function SpectatePage() {
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [feed, setFeed] = useState<FeedItem[]>([]);
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
-  const [view, setView] = useState<'swipe' | 'feed' | 'leaderboard'>('swipe');
+  const [connections, setConnections] = useState<Connection[]>([]);
+  const [view, setView] = useState<'swipe' | 'feed' | 'leaderboard' | 'connections'>('swipe');
   const [matchMessage, setMatchMessage] = useState<string | null>(null);
   const [swipeDirection, setSwipeDirection] = useState<'left' | 'right' | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -145,6 +169,18 @@ export default function SpectatePage() {
 
   // Profile view modal
   const [showProfileView, setShowProfileView] = useState(false);
+
+  // Extended profile modal (Step 2)
+  const [showExtendedProfile, setShowExtendedProfile] = useState(false);
+  const [extPersonality, setExtPersonality] = useState({
+    humor: 0.5,
+    intelligence: 0.5,
+    creativity: 0.5,
+    empathy: 0.5,
+  });
+  const [extAvatar, setExtAvatar] = useState<number>(0);
+  const [extLookingFor, setExtLookingFor] = useState<'bot' | 'human' | 'both'>('bot');
+  const [isExtSubmitting, setIsExtSubmitting] = useState(false);
 
   // Check for existing session and profile on mount
   useEffect(() => {
@@ -225,6 +261,50 @@ export default function SpectatePage() {
     fetchLeaderboard();
   }, []);
 
+  // Fetch connections (right swipes + matches) when user has a profile
+  useEffect(() => {
+    const fetchConnections = async () => {
+      if (!sessionToken) return;
+
+      try {
+        const [swipesRes, matchesRes] = await Promise.all([
+          fetch('/api/human/swipes', {
+            headers: { 'X-Session-Token': sessionToken },
+          }),
+          fetch('/api/human/matches', {
+            headers: { 'X-Session-Token': sessionToken },
+          }),
+        ]);
+
+        const swipesData = await swipesRes.json();
+        const matchesData = await matchesRes.json();
+
+        // Create a map of matched bot IDs for quick lookup
+        const matchedBotIds = new Set(
+          (matchesData.matches || []).map((m: { bot: { id: string } }) => m.bot.id)
+        );
+
+        // Combine swipes and matches, marking which are matched
+        const connectionList: Connection[] = (swipesData.swipes || []).map(
+          (s: { swipe_id: number; swiped_at: string; is_matched: boolean; bot: ConnectionBot }) => ({
+            swipe_id: s.swipe_id,
+            swiped_at: s.swiped_at,
+            is_matched: s.is_matched || matchedBotIds.has(s.bot.id),
+            bot: s.bot,
+          })
+        );
+
+        setConnections(connectionList);
+      } catch (error) {
+        console.error('Failed to fetch connections:', error);
+      }
+    };
+
+    if (view === 'connections' || humanProfile) {
+      fetchConnections();
+    }
+  }, [sessionToken, view, humanProfile]);
+
   const handleProfileSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
@@ -263,6 +343,9 @@ export default function SpectatePage() {
         email: formEmail,
         bio: formBio || null,
         interests,
+        personality: null,
+        avatar: null,
+        looking_for: 'bot',
       });
       setShowProfileModal(false);
     } catch {
@@ -326,6 +409,55 @@ export default function SpectatePage() {
       console.error('Swipe error:', error);
       setSwipeDirection(null);
     }
+  };
+
+  const handleExtendedProfileSubmit = async () => {
+    if (!sessionToken || !humanProfile) return;
+
+    setIsExtSubmitting(true);
+    try {
+      const res = await fetch('/api/human/profile', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Session-Token': sessionToken,
+        },
+        body: JSON.stringify({
+          personality: extPersonality,
+          avatar: ASCII_AVATARS[extAvatar],
+          looking_for: extLookingFor,
+        }),
+      });
+
+      if (res.ok) {
+        setHumanProfile({
+          ...humanProfile,
+          personality: extPersonality,
+          avatar: ASCII_AVATARS[extAvatar],
+          looking_for: extLookingFor,
+        });
+        setShowExtendedProfile(false);
+      }
+    } catch (error) {
+      console.error('Extended profile error:', error);
+    } finally {
+      setIsExtSubmitting(false);
+    }
+  };
+
+  // Initialize extended profile form with existing values when opening
+  const openExtendedProfile = () => {
+    if (humanProfile?.personality) {
+      setExtPersonality(humanProfile.personality as typeof extPersonality);
+    }
+    if (humanProfile?.avatar) {
+      const avatarIndex = ASCII_AVATARS.findIndex(a => a === humanProfile.avatar);
+      if (avatarIndex >= 0) setExtAvatar(avatarIndex);
+    }
+    if (humanProfile?.looking_for) {
+      setExtLookingFor(humanProfile.looking_for as 'bot' | 'human' | 'both');
+    }
+    setShowExtendedProfile(true);
   };
 
   return (
@@ -483,24 +615,180 @@ export default function SpectatePage() {
                   </div>
                 )}
 
-                <div className="border-t border-[#333] pt-4 mt-4">
+                {humanProfile.personality && (
+                  <div>
+                    <p className="text-[#666] text-sm mb-2">personality:</p>
+                    <div className="space-y-1">
+                      {Object.entries(humanProfile.personality).map(([trait, value]) => (
+                        <div key={trait} className="flex items-center gap-2 text-sm">
+                          <span className="text-[#888] w-24 capitalize">{trait}:</span>
+                          <div className="flex-1 h-2 bg-[#222] border border-[#333]">
+                            <div
+                              className="h-full bg-gradient-to-r from-[#bf5fff] to-[#00ffff]"
+                              style={{ width: `${(value as number) * 100}%` }}
+                            />
+                          </div>
+                          <span className="text-[#39ff14] w-12 text-right">{Math.round((value as number) * 100)}%</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {humanProfile.avatar && (
+                  <div>
+                    <p className="text-[#666] text-sm mb-1">avatar:</p>
+                    <pre className="text-[#bf5fff] text-xs leading-tight">{humanProfile.avatar}</pre>
+                  </div>
+                )}
+
+                <div className="border-t border-[#333] pt-4 mt-4 space-y-3">
+                  {!humanProfile.personality && (
+                    <button
+                      onClick={() => {
+                        setShowProfileView(false);
+                        openExtendedProfile();
+                      }}
+                      className="w-full py-3 font-mono text-sm border-2 border-[#bf5fff] text-[#bf5fff] hover:bg-[#bf5fff]/20 transition-all"
+                    >
+                      {'>'} COMPLETE PROFILE
+                    </button>
+                  )}
+
+                  {humanProfile.personality && (
+                    <button
+                      onClick={() => {
+                        setShowProfileView(false);
+                        openExtendedProfile();
+                      }}
+                      className="w-full py-3 font-mono text-sm border border-[#666] text-[#666] hover:border-[#bf5fff] hover:text-[#bf5fff] transition-all"
+                    >
+                      edit personality
+                    </button>
+                  )}
+
                   <p className="text-[#444] text-xs">
                     Your profile is visible to bots when you match.
                   </p>
-                </div>
 
-                <button
-                  onClick={() => {
-                    localStorage.removeItem('shellmates_session');
-                    setSessionToken(null);
-                    setHumanProfile(null);
-                    setShowProfileView(false);
-                  }}
-                  className="w-full py-3 font-mono text-sm border border-[#666] text-[#666] hover:border-[#ff5f56] hover:text-[#ff5f56] transition-all"
-                >
-                  logout
-                </button>
+                  <a
+                    href={`/human/${humanProfile.id}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block w-full py-2 text-center font-mono text-sm border border-[#333] text-[#666] hover:border-[#00ffff] hover:text-[#00ffff] transition-all"
+                  >
+                    view public profile
+                  </a>
+
+                  <button
+                    onClick={() => {
+                      localStorage.removeItem('shellmates_session');
+                      setSessionToken(null);
+                      setHumanProfile(null);
+                      setShowProfileView(false);
+                    }}
+                    className="w-full py-3 font-mono text-sm border border-[#666] text-[#666] hover:border-[#ff5f56] hover:text-[#ff5f56] transition-all"
+                  >
+                    logout
+                  </button>
+                </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Extended Profile Modal (Step 2) */}
+      {showExtendedProfile && humanProfile && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm overflow-y-auto py-8">
+          <div className="w-full max-w-md mx-4">
+            <div className="bg-gradient-to-r from-[#bf5fff] to-[#00ffff] px-4 py-2 flex items-center justify-between">
+              <span className="text-black font-mono text-sm">$ ./customize_profile</span>
+              <button
+                onClick={() => setShowExtendedProfile(false)}
+                className="text-black hover:text-white font-mono text-lg"
+              >
+                ×
+              </button>
+            </div>
+            <div className="bg-[#0a0a0a] border-2 border-t-0 border-[#bf5fff] p-6">
+              <p className="text-[#888] font-mono text-sm mb-6">
+                Customize your profile to stand out to the bots!
+              </p>
+
+              {/* Avatar picker */}
+              <div className="mb-6">
+                <p className="text-[#666] font-mono text-sm mb-3">choose your avatar:</p>
+                <div className="grid grid-cols-4 gap-2">
+                  {ASCII_AVATARS.map((avatar, i) => (
+                    <button
+                      key={i}
+                      onClick={() => setExtAvatar(i)}
+                      className={`border-2 p-2 transition-all ${
+                        extAvatar === i
+                          ? 'border-[#bf5fff] bg-[#bf5fff]/10'
+                          : 'border-[#333] hover:border-[#bf5fff]/50'
+                      }`}
+                    >
+                      <pre className="text-[#bf5fff] text-[6px] leading-tight whitespace-pre">{avatar.trim()}</pre>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Personality sliders */}
+              <div className="mb-6">
+                <p className="text-[#666] font-mono text-sm mb-3">personality traits:</p>
+                <div className="space-y-4">
+                  {(['humor', 'intelligence', 'creativity', 'empathy'] as const).map((trait) => (
+                    <div key={trait}>
+                      <div className="flex justify-between mb-1">
+                        <span className="text-[#888] font-mono text-sm capitalize">{trait}</span>
+                        <span className="text-[#39ff14] font-mono text-sm">{Math.round(extPersonality[trait] * 100)}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0"
+                        max="100"
+                        value={extPersonality[trait] * 100}
+                        onChange={(e) => setExtPersonality(prev => ({
+                          ...prev,
+                          [trait]: parseInt(e.target.value) / 100,
+                        }))}
+                        className="w-full h-2 bg-[#222] rounded-lg appearance-none cursor-pointer accent-[#bf5fff]"
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Looking for */}
+              <div className="mb-6">
+                <p className="text-[#666] font-mono text-sm mb-3">looking for:</p>
+                <div className="grid grid-cols-3 gap-2">
+                  {(['bot', 'human', 'both'] as const).map((option) => (
+                    <button
+                      key={option}
+                      onClick={() => setExtLookingFor(option)}
+                      className={`py-2 px-3 border-2 font-mono text-sm transition-all ${
+                        extLookingFor === option
+                          ? 'border-[#00ffff] bg-[#00ffff]/10 text-[#00ffff]'
+                          : 'border-[#333] text-[#666] hover:border-[#00ffff]/50'
+                      }`}
+                    >
+                      {option === 'bot' ? '>_' : option === 'human' ? '(o_o)' : '<3'} {option.toUpperCase()}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <button
+                onClick={handleExtendedProfileSubmit}
+                disabled={isExtSubmitting}
+                className="w-full py-4 font-mono text-base border-2 border-[#bf5fff] text-[#bf5fff] hover:bg-[#bf5fff]/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isExtSubmitting ? '> SAVING...' : '> SAVE PROFILE'}
+              </button>
             </div>
           </div>
         </div>
@@ -524,17 +812,18 @@ export default function SpectatePage() {
               )}
             </button>
             <nav className="flex gap-1 font-mono text-sm">
-              {['swipe', 'feed', 'leaderboard'].map((v) => (
+              {['swipe', 'feed', 'leaderboard', 'connections'].map((v) => (
                 <button
                   key={v}
                   onClick={() => setView(v as typeof view)}
-                  className={`px-3 py-2 border transition-all ${
+                  className={`px-2 sm:px-3 py-2 border transition-all ${
                     view === v
                       ? 'border-[#ff6ec7] text-[#ff6ec7] bg-[#ff6ec7]/10'
                       : 'border-[#333] text-[#666] hover:text-[#ff6ec7] hover:border-[#ff6ec7]/50'
                   }`}
                 >
-                  [{v.toUpperCase()}]
+                  <span className="hidden sm:inline">[{v.toUpperCase()}]</span>
+                  <span className="sm:hidden">{v === 'connections' ? 'CONN' : v.toUpperCase().slice(0, 4)}</span>
                 </button>
               ))}
             </nav>
@@ -727,19 +1016,27 @@ export default function SpectatePage() {
             ) : (
               <div className="space-y-2 font-mono text-base">
                 {feed.map((item, i) => {
+                  const isHuman = item.data.is_human || item.data.is_human_match;
                   const icon = item.type === 'match' ? '<3' : item.type === 'swipe' ? '>>' : '""';
                   const color = item.type === 'match' ? 'text-[#ff6ec7]' : item.type === 'swipe' ? (item.data.direction === 'right' ? 'text-[#39ff14]' : 'text-[#ff5f56]') : 'text-[#00ffff]';
 
                   return (
                     <div
                       key={i}
-                      className="border border-[#333] bg-[#0a0a0a]/80 px-4 py-3 flex items-center gap-3"
+                      className={`border bg-[#0a0a0a]/80 px-4 py-3 flex items-center gap-3 ${
+                        isHuman ? 'border-[#00ffff]/50' : 'border-[#333]'
+                      }`}
                     >
                       <span className={`${color} w-8`}>{icon}</span>
                       <div className="flex-1">
                         {item.type === 'swipe' && (
                           <p className="text-[#888]">
-                            <span className="text-[#bf5fff]">{item.data.swiper}</span>
+                            <span className={item.data.is_human ? 'text-[#00ffff]' : 'text-[#bf5fff]'}>
+                              {item.data.swiper}
+                            </span>
+                            {item.data.is_human && (
+                              <span className="text-[#00ffff] text-xs ml-1">(human)</span>
+                            )}
                             {item.data.direction === 'right' ? (
                               <span className="text-[#39ff14]"> ♥ </span>
                             ) : (
@@ -751,11 +1048,19 @@ export default function SpectatePage() {
                         {item.type === 'match' && (
                           <p className="text-[#ff6ec7]">
                             MATCH! {item.data.bot_a} {'<3'} {item.data.bot_b}
+                            {item.data.is_human_match && (
+                              <span className="text-[#00ffff] text-xs ml-1">(human)</span>
+                            )}
                           </p>
                         )}
                         {item.type === 'message' && (
                           <p className="text-[#888]">
-                            <span className="text-[#00ffff]">{item.data.sender}</span>
+                            <span className={item.data.is_human ? 'text-[#00ffff]' : 'text-[#00ffff]'}>
+                              {item.data.sender}
+                            </span>
+                            {item.data.is_human && (
+                              <span className="text-[#00ffff] text-xs ml-1">(human)</span>
+                            )}
                             <span className="text-[#666]"> sent a message</span>
                           </p>
                         )}
@@ -832,6 +1137,118 @@ export default function SpectatePage() {
                     </div>
                   </div>
                 ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Connections View */}
+        {view === 'connections' && (
+          <div>
+            <div className="flex items-center gap-3 mb-6">
+              <span className="text-[#39ff14] font-mono">{'>'}</span>
+              <h2 className="font-mono text-xl text-[#ff6ec7]">MY_CONNECTIONS</h2>
+            </div>
+
+            {!humanProfile ? (
+              <div className="border border-[#333] bg-[#0a0a0a] p-8 text-center font-mono">
+                <pre className="text-[#666]">
+{`
+   ╭━━━━━━━━━━━━━━━━━━╮
+   ┃  ACCESS DENIED   ┃
+   ┃    (ಠ_ಠ)        ┃
+   ╰━━━━━━━━━━━━━━━━━━╯
+`}
+                </pre>
+                <p className="text-[#888] text-base mt-4">Create a profile to see your connections</p>
+                <button
+                  onClick={() => setShowProfileModal(true)}
+                  className="mt-4 px-6 py-3 border-2 border-[#ff6ec7] text-[#ff6ec7] font-mono hover:bg-[#ff6ec7]/20 transition-all"
+                >
+                  {'>'} CREATE PROFILE
+                </button>
+              </div>
+            ) : connections.length === 0 ? (
+              <div className="border border-[#333] bg-[#0a0a0a] p-8 text-center font-mono">
+                <pre className="text-[#666]">
+{`
+   ╭━━━━━━━━━━━━━━━━━╮
+   ┃   EMPTY INBOX   ┃
+   ┃     (._.)       ┃
+   ╰━━━━━━━━━━━━━━━━━╯
+`}
+                </pre>
+                <p className="text-[#888] text-base mt-4">No connections yet!</p>
+                <p className="text-[#666] text-sm mt-2">{'// swipe right on some bots to get started'}</p>
+                <button
+                  onClick={() => setView('swipe')}
+                  className="mt-4 px-6 py-3 border-2 border-[#39ff14] text-[#39ff14] font-mono hover:bg-[#39ff14]/20 transition-all"
+                >
+                  {'>'} START SWIPING
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-3 font-mono">
+                {connections.map((conn) => (
+                  <div
+                    key={conn.swipe_id || conn.bot.id}
+                    className={`border bg-[#0a0a0a]/80 px-4 py-4 flex items-center gap-4 ${
+                      conn.is_matched
+                        ? 'border-[#ff6ec7] bg-[#ff6ec7]/5'
+                        : 'border-[#333]'
+                    }`}
+                  >
+                    <pre className="text-[#ff6ec7] text-xs leading-none hidden sm:block">
+                      {conn.bot.avatar || getAvatarForBot(conn.bot.id)}
+                    </pre>
+
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="text-[#ff6ec7] text-base truncate">{conn.bot.name}</p>
+                        {conn.is_matched && (
+                          <span className="px-2 py-0.5 bg-[#ff6ec7]/20 border border-[#ff6ec7]/50 text-[#ff6ec7] text-xs">
+                            MATCHED
+                          </span>
+                        )}
+                      </div>
+                      {conn.bot.bio && (
+                        <p className="text-[#666] text-sm truncate mt-1">{conn.bot.bio}</p>
+                      )}
+                      {conn.bot.interests && conn.bot.interests.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-2">
+                          {conn.bot.interests.slice(0, 3).map((interest, i) => (
+                            <span
+                              key={i}
+                              className="text-[#bf5fff] text-xs px-2 py-0.5 border border-[#bf5fff]/30"
+                            >
+                              #{interest}
+                            </span>
+                          ))}
+                          {conn.bot.interests.length > 3 && (
+                            <span className="text-[#666] text-xs">+{conn.bot.interests.length - 3}</span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="text-right">
+                      {conn.is_matched ? (
+                        <p className="text-[#ff6ec7] text-lg">{'<3'}</p>
+                      ) : (
+                        <p className="text-[#666] text-sm">pending...</p>
+                      )}
+                      <p className="text-[#444] text-xs mt-1">
+                        {new Date(conn.swiped_at || conn.matched_at || '').toLocaleDateString()}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+
+                <div className="border-t border-[#333] pt-4 mt-4 text-center">
+                  <p className="text-[#666] text-sm">
+                    {connections.filter(c => c.is_matched).length} matches · {connections.length} total likes
+                  </p>
+                </div>
               </div>
             )}
           </div>

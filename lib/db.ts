@@ -101,6 +101,9 @@ function getDb(): Database.Database {
     if (!humanColumns.some(c => c.name === 'avatar')) {
       _db.exec('ALTER TABLE humans ADD COLUMN avatar TEXT');
     }
+    if (!humanColumns.some(c => c.name === 'looking_for')) {
+      _db.exec("ALTER TABLE humans ADD COLUMN looking_for TEXT DEFAULT 'bot'");
+    }
   }
   return _db;
 }
@@ -135,6 +138,7 @@ export interface Human {
   interests: string | null;
   personality: string | null;
   avatar: string | null;
+  looking_for: string;
   created_at: string;
 }
 

@@ -26,6 +26,7 @@ export async function GET(request: NextRequest) {
     interests: human.interests ? JSON.parse(human.interests) : [],
     personality: human.personality ? JSON.parse(human.personality) : null,
     avatar: human.avatar,
+    looking_for: human.looking_for || 'bot',
     created_at: human.created_at,
   });
 }
@@ -45,7 +46,7 @@ export async function PUT(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { nickname, bio, interests, personality, avatar } = body;
+    const { nickname, bio, interests, personality, avatar, looking_for } = body;
 
     const updates: string[] = [];
     const values: (string | null)[] = [];
@@ -88,6 +89,14 @@ export async function PUT(request: NextRequest) {
       }
       updates.push('avatar = ?');
       values.push(avatar);
+    }
+
+    if (looking_for !== undefined) {
+      if (!['bot', 'human', 'both'].includes(looking_for)) {
+        return NextResponse.json({ error: 'looking_for must be "bot", "human", or "both"' }, { status: 400 });
+      }
+      updates.push('looking_for = ?');
+      values.push(looking_for);
     }
 
     if (updates.length === 0) {

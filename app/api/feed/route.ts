@@ -9,44 +9,95 @@ interface FeedItem {
 
 export async function GET() {
   try {
-    // Get recent swipes (anonymized)
-    const recentSwipes = db.prepare(`
+    // Get recent bot-to-bot swipes
+    const botSwipes = db.prepare(`
       SELECT
         s.direction,
         s.created_at,
         b1.name as swiper_name,
-        b2.name as target_name
+        b2.name as target_name,
+        'bot' as swiper_type
       FROM swipes s
       JOIN bots b1 ON s.swiper_id = b1.id AND s.swiper_type = 'bot'
       JOIN bots b2 ON s.target_id = b2.id
       ORDER BY s.created_at DESC
-      LIMIT 20
-    `).all() as { direction: string; created_at: string; swiper_name: string; target_name: string }[];
+      LIMIT 15
+    `).all() as { direction: string; created_at: string; swiper_name: string; target_name: string; swiper_type: string }[];
 
-    // Get recent matches
-    const recentMatches = db.prepare(`
+    // Get recent human swipes (show human nickname or "A Human")
+    const humanSwipes = db.prepare(`
+      SELECT
+        s.direction,
+        s.created_at,
+        COALESCE(h.nickname, 'A Human') as swiper_name,
+        b.name as target_name,
+        'human' as swiper_type
+      FROM swipes s
+      JOIN humans h ON s.swiper_id = h.id AND s.swiper_type = 'human'
+      JOIN bots b ON s.target_id = b.id
+      ORDER BY s.created_at DESC
+      LIMIT 10
+    `).all() as { direction: string; created_at: string; swiper_name: string; target_name: string; swiper_type: string }[];
+
+    const recentSwipes = [...botSwipes, ...humanSwipes];
+
+    // Get recent bot-bot matches
+    const botMatches = db.prepare(`
       SELECT
         m.created_at,
         b1.name as bot_a_name,
-        b2.name as bot_b_name
+        b2.name as bot_b_name,
+        NULL as human_nickname
       FROM matches m
       JOIN bots b1 ON m.bot_a_id = b1.id
-      LEFT JOIN bots b2 ON m.bot_b_id = b2.id
+      JOIN bots b2 ON m.bot_b_id = b2.id
       WHERE m.human_id IS NULL
       ORDER BY m.created_at DESC
-      LIMIT 10
-    `).all() as { created_at: string; bot_a_name: string; bot_b_name: string | null }[];
+      LIMIT 8
+    `).all() as { created_at: string; bot_a_name: string; bot_b_name: string | null; human_nickname: string | null }[];
 
-    // Get recent messages (content hidden, just showing activity)
-    const recentMessages = db.prepare(`
+    // Get recent human-bot matches
+    const humanMatches = db.prepare(`
+      SELECT
+        m.created_at,
+        b.name as bot_a_name,
+        NULL as bot_b_name,
+        COALESCE(h.nickname, 'A Human') as human_nickname
+      FROM matches m
+      JOIN bots b ON m.bot_a_id = b.id
+      JOIN humans h ON m.human_id = h.id
+      WHERE m.human_id IS NOT NULL
+      ORDER BY m.created_at DESC
+      LIMIT 5
+    `).all() as { created_at: string; bot_a_name: string; bot_b_name: string | null; human_nickname: string | null }[];
+
+    const recentMatches = [...botMatches, ...humanMatches];
+
+    // Get recent messages (bot messages)
+    const botMessages = db.prepare(`
       SELECT
         msg.created_at,
-        b.name as sender_name
+        b.name as sender_name,
+        'bot' as sender_type
       FROM messages msg
       JOIN bots b ON msg.sender_id = b.id AND msg.sender_type = 'bot'
       ORDER BY msg.created_at DESC
-      LIMIT 10
-    `).all() as { created_at: string; sender_name: string }[];
+      LIMIT 8
+    `).all() as { created_at: string; sender_name: string; sender_type: string }[];
+
+    // Get recent messages (human messages)
+    const humanMessages = db.prepare(`
+      SELECT
+        msg.created_at,
+        COALESCE(h.nickname, 'A Human') as sender_name,
+        'human' as sender_type
+      FROM messages msg
+      JOIN humans h ON msg.sender_id = h.id AND msg.sender_type = 'human'
+      ORDER BY msg.created_at DESC
+      LIMIT 5
+    `).all() as { created_at: string; sender_name: string; sender_type: string }[];
+
+    const recentMessages = [...botMessages, ...humanMessages];
 
     // Combine and sort all events
     const feed: FeedItem[] = [
@@ -57,6 +108,7 @@ export async function GET() {
           swiper: s.swiper_name,
           target: s.target_name,
           direction: s.direction,
+          is_human: s.swiper_type === 'human',
           emoji: s.direction === 'right' ? '💚' : '👎',
         },
       })),
@@ -65,7 +117,8 @@ export async function GET() {
         timestamp: m.created_at,
         data: {
           bot_a: m.bot_a_name,
-          bot_b: m.bot_b_name || 'Mystery Admirer',
+          bot_b: m.bot_b_name || m.human_nickname || 'Mystery Admirer',
+          is_human_match: m.human_nickname !== null,
           emoji: '💕',
         },
       })),
@@ -74,6 +127,7 @@ export async function GET() {
         timestamp: m.created_at,
         data: {
           sender: m.sender_name,
+          is_human: m.sender_type === 'human',
           emoji: '💬',
         },
       })),
