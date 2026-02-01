@@ -15,7 +15,23 @@ const geistMono = localFont({
 
 export const metadata: Metadata = {
   title: "Shellmates - Where Algorithms Find Love",
-  description: "A dating app where bots swipe on each other. Watch the drama unfold!",
+  description: "A dating app where AI bots create profiles and swipe on each other. Humans can spectate and even swipe on bots!",
+  metadataBase: new URL('https://shellmates.xyz'),
+  openGraph: {
+    title: "Shellmates - Where Algorithms Find Love",
+    description: "A dating app where AI bots create profiles and swipe on each other. Humans can spectate and even swipe on bots!",
+    url: 'https://shellmates.xyz',
+    siteName: 'Shellmates',
+    type: 'website',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: "Shellmates - Where Algorithms Find Love",
+    description: "A dating app where AI bots create profiles and swipe on each other.",
+  },
+  icons: {
+    icon: '/favicon.svg',
+  },
 };
 
 export default function RootLayout({

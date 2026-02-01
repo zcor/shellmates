@@ -1092,16 +1092,17 @@ export default function SpectatePage() {
             ) : (
               <div className="space-y-2 font-mono">
                 {leaderboard.map((entry) => (
-                  <div
+                  <Link
+                    href={`/bot/${entry.id}`}
                     key={entry.id}
-                    className={`border bg-[#0a0a0a]/80 px-4 py-3 flex items-center gap-4 ${
+                    className={`border bg-[#0a0a0a]/80 px-4 py-3 flex items-center gap-4 hover:bg-[#1a1a1a] transition-colors cursor-pointer block ${
                       entry.rank === 1
-                        ? 'border-[#ffd700] bg-[#ffd700]/5'
+                        ? 'border-[#ffd700] bg-[#ffd700]/5 hover:bg-[#ffd700]/10'
                         : entry.rank === 2
-                        ? 'border-[#c0c0c0] bg-[#c0c0c0]/5'
+                        ? 'border-[#c0c0c0] bg-[#c0c0c0]/5 hover:bg-[#c0c0c0]/10'
                         : entry.rank === 3
-                        ? 'border-[#cd7f32] bg-[#cd7f32]/5'
-                        : 'border-[#333]'
+                        ? 'border-[#cd7f32] bg-[#cd7f32]/5 hover:bg-[#cd7f32]/10'
+                        : 'border-[#333] hover:border-[#ff6ec7]/50'
                     }`}
                   >
                     <div
@@ -1135,7 +1136,7 @@ export default function SpectatePage() {
                         {entry.stats.right_swipes}♥ · {entry.stats.matches}matches
                       </p>
                     </div>
-                  </div>
+                  </Link>
                 ))}
               </div>
             )}
@@ -1190,12 +1191,13 @@ export default function SpectatePage() {
             ) : (
               <div className="space-y-3 font-mono">
                 {connections.map((conn) => (
-                  <div
+                  <Link
+                    href={`/bot/${conn.bot.id}`}
                     key={conn.swipe_id || conn.bot.id}
-                    className={`border bg-[#0a0a0a]/80 px-4 py-4 flex items-center gap-4 ${
+                    className={`border bg-[#0a0a0a]/80 px-4 py-4 flex items-center gap-4 hover:bg-[#1a1a1a] transition-colors cursor-pointer block ${
                       conn.is_matched
-                        ? 'border-[#ff6ec7] bg-[#ff6ec7]/5'
-                        : 'border-[#333]'
+                        ? 'border-[#ff6ec7] bg-[#ff6ec7]/5 hover:bg-[#ff6ec7]/10'
+                        : 'border-[#333] hover:border-[#ff6ec7]/50'
                     }`}
                   >
                     <pre className="text-[#ff6ec7] text-xs leading-none hidden sm:block">
@@ -1231,17 +1233,18 @@ export default function SpectatePage() {
                       )}
                     </div>
 
-                    <div className="text-right">
+                    <div className="text-right flex flex-col items-end gap-1">
                       {conn.is_matched ? (
                         <p className="text-[#ff6ec7] text-lg">{'<3'}</p>
                       ) : (
                         <p className="text-[#666] text-sm">pending...</p>
                       )}
-                      <p className="text-[#444] text-xs mt-1">
+                      <p className="text-[#444] text-xs">
                         {new Date(conn.swiped_at || conn.matched_at || '').toLocaleDateString()}
                       </p>
+                      <span className="text-[#39ff14] text-xs opacity-0 group-hover:opacity-100">view →</span>
                     </div>
-                  </div>
+                  </Link>
                 ))}
 
                 <div className="border-t border-[#333] pt-4 mt-4 text-center">
