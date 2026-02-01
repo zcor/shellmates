@@ -86,6 +86,9 @@ function getDb(): Database.Database {
 
     // Migration: add human profile columns if not exists
     const humanColumns = _db.prepare("PRAGMA table_info(humans)").all() as { name: string }[];
+    if (!humanColumns.some(c => c.name === 'email')) {
+      _db.exec('ALTER TABLE humans ADD COLUMN email TEXT');
+    }
     if (!humanColumns.some(c => c.name === 'bio')) {
       _db.exec('ALTER TABLE humans ADD COLUMN bio TEXT');
     }
@@ -127,6 +130,7 @@ export interface Human {
   id: string;
   session_token: string | null;
   nickname: string | null;
+  email: string | null;
   bio: string | null;
   interests: string | null;
   personality: string | null;

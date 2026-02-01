@@ -15,6 +15,7 @@ interface Bot {
 interface HumanProfile {
   id: string;
   nickname: string;
+  email: string;
   bio: string | null;
   interests: string[];
 }
@@ -136,10 +137,14 @@ export default function SpectatePage() {
 
   // Profile form state
   const [formNickname, setFormNickname] = useState('');
+  const [formEmail, setFormEmail] = useState('');
   const [formBio, setFormBio] = useState('');
   const [formInterests, setFormInterests] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Profile view modal
+  const [showProfileView, setShowProfileView] = useState(false);
 
   // Check for existing session and profile on mount
   useEffect(() => {
@@ -155,18 +160,13 @@ export default function SpectatePage() {
           if (res.ok) {
             const data = await res.json();
             setHumanProfile(data);
-          } else {
-            // Session exists but no profile - show modal
-            setShowProfileModal(true);
           }
+          // If no profile, they can still browse as spectator
         } catch {
-          // No profile found
-          setShowProfileModal(true);
+          // No profile found - they can still browse
         }
-      } else {
-        // No session - show profile creation modal
-        setShowProfileModal(true);
       }
+      // No session - they can browse as spectator, modal shows when they try to swipe right
     };
     checkSession();
   }, []);
@@ -241,6 +241,7 @@ export default function SpectatePage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           nickname: formNickname,
+          email: formEmail,
           bio: formBio || null,
           interests: interests.length > 0 ? interests : null,
         }),
@@ -259,6 +260,7 @@ export default function SpectatePage() {
       setHumanProfile({
         id: data.id,
         nickname: data.nickname,
+        email: formEmail,
         bio: formBio || null,
         interests,
       });
@@ -344,8 +346,14 @@ export default function SpectatePage() {
       {showProfileModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
           <div className="w-full max-w-md mx-4">
-            <div className="bg-gradient-to-r from-[#ff6ec7] to-[#bf5fff] px-4 py-2 flex items-center gap-2">
+            <div className="bg-gradient-to-r from-[#ff6ec7] to-[#bf5fff] px-4 py-2 flex items-center justify-between">
               <span className="text-black font-mono text-sm">$ create_profile</span>
+              <button
+                onClick={() => setShowProfileModal(false)}
+                className="text-black hover:text-white font-mono text-lg"
+              >
+                ×
+              </button>
             </div>
             <div className="bg-[#0a0a0a] border-2 border-t-0 border-[#ff6ec7] p-6">
               <p className="text-[#888] font-mono text-base mb-6">
@@ -353,6 +361,21 @@ export default function SpectatePage() {
               </p>
 
               <form onSubmit={handleProfileSubmit} className="space-y-4">
+                <div>
+                  <label className="block text-[#666] font-mono text-sm mb-2">
+                    email: <span className="text-[#ff6ec7]">*</span>
+                  </label>
+                  <input
+                    type="email"
+                    value={formEmail}
+                    onChange={(e) => setFormEmail(e.target.value)}
+                    placeholder="you@example.com"
+                    required
+                    className="w-full bg-black border-2 border-[#333] focus:border-[#ff6ec7] px-4 py-3 font-mono text-base text-[#e0e0e0] outline-none transition-colors"
+                  />
+                  <p className="text-[#444] font-mono text-xs mt-1">for match notifications</p>
+                </div>
+
                 <div>
                   <label className="block text-[#666] font-mono text-sm mb-2">
                     nickname: <span className="text-[#ff6ec7]">*</span>
@@ -401,12 +424,83 @@ export default function SpectatePage() {
 
                 <button
                   type="submit"
-                  disabled={isSubmitting || !formNickname.trim()}
+                  disabled={isSubmitting || !formNickname.trim() || !formEmail.trim()}
                   className="w-full py-4 font-mono text-base border-2 border-[#ff6ec7] text-[#ff6ec7] hover:bg-[#ff6ec7]/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isSubmitting ? '> CREATING...' : '> SAVE & START SWIPING'}
                 </button>
               </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Profile View Modal */}
+      {showProfileView && humanProfile && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
+          <div className="w-full max-w-md mx-4">
+            <div className="bg-gradient-to-r from-[#39ff14] to-[#00ffff] px-4 py-2 flex items-center justify-between">
+              <span className="text-black font-mono text-sm">$ cat ~/profile.json</span>
+              <button
+                onClick={() => setShowProfileView(false)}
+                className="text-black hover:text-white font-mono text-lg"
+              >
+                ×
+              </button>
+            </div>
+            <div className="bg-[#0a0a0a] border-2 border-t-0 border-[#39ff14] p-6">
+              <div className="space-y-4 font-mono">
+                <div>
+                  <p className="text-[#666] text-sm">nickname:</p>
+                  <p className="text-[#39ff14] text-lg">@{humanProfile.nickname}</p>
+                </div>
+
+                <div>
+                  <p className="text-[#666] text-sm">email:</p>
+                  <p className="text-[#888] text-base">{humanProfile.email}</p>
+                </div>
+
+                {humanProfile.bio && (
+                  <div>
+                    <p className="text-[#666] text-sm">bio:</p>
+                    <p className="text-[#888] text-base italic">&quot;{humanProfile.bio}&quot;</p>
+                  </div>
+                )}
+
+                {humanProfile.interests && humanProfile.interests.length > 0 && (
+                  <div>
+                    <p className="text-[#666] text-sm mb-2">interests:</p>
+                    <div className="flex flex-wrap gap-2">
+                      {humanProfile.interests.map((interest, i) => (
+                        <span
+                          key={i}
+                          className="border border-[#bf5fff]/50 text-[#bf5fff] text-sm px-3 py-1"
+                        >
+                          #{interest}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="border-t border-[#333] pt-4 mt-4">
+                  <p className="text-[#444] text-xs">
+                    Your profile is visible to bots when you match.
+                  </p>
+                </div>
+
+                <button
+                  onClick={() => {
+                    localStorage.removeItem('shellmates_session');
+                    setSessionToken(null);
+                    setHumanProfile(null);
+                    setShowProfileView(false);
+                  }}
+                  className="w-full py-3 font-mono text-sm border border-[#666] text-[#666] hover:border-[#ff5f56] hover:text-[#ff5f56] transition-all"
+                >
+                  logout
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -419,11 +513,16 @@ export default function SpectatePage() {
             {'>'}_SHELLMATES
           </Link>
           <div className="flex items-center gap-4">
-            {humanProfile && (
-              <span className="text-[#39ff14] font-mono text-sm hidden sm:block">
-                @{humanProfile.nickname}
-              </span>
-            )}
+            <button
+              onClick={() => humanProfile ? setShowProfileView(true) : setShowProfileModal(true)}
+              className="text-sm font-mono hidden sm:block px-3 py-1 border border-[#333] hover:border-[#39ff14] transition-colors"
+            >
+              {humanProfile ? (
+                <span className="text-[#39ff14]">@{humanProfile.nickname}</span>
+              ) : (
+                <span className="text-[#666] hover:text-[#39ff14]">spectator</span>
+              )}
+            </button>
             <nav className="flex gap-1 font-mono text-sm">
               {['swipe', 'feed', 'leaderboard'].map((v) => (
                 <button

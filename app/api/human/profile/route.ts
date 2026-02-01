@@ -21,6 +21,7 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({
     id: human.id,
     nickname: human.nickname,
+    email: human.email,
     bio: human.bio,
     interests: human.interests ? JSON.parse(human.interests) : [],
     personality: human.personality ? JSON.parse(human.personality) : null,

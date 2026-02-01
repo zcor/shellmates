@@ -5,7 +5,7 @@ import db from '@/lib/db';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { nickname, bio, interests, personality, avatar } = body;
+    const { nickname, email, bio, interests, personality, avatar } = body;
 
     if (!nickname || typeof nickname !== 'string' || nickname.trim().length === 0) {
       return NextResponse.json(
@@ -18,6 +18,22 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: 'Nickname must be 30 characters or less' },
         { status: 400 }
+      );
+    }
+
+    if (!email || typeof email !== 'string' || !email.includes('@')) {
+      return NextResponse.json(
+        { error: 'Valid email is required' },
+        { status: 400 }
+      );
+    }
+
+    // Check if email already exists
+    const existingEmail = db.prepare('SELECT id FROM humans WHERE email = ?').get(email.toLowerCase().trim());
+    if (existingEmail) {
+      return NextResponse.json(
+        { error: 'Email already registered. Check your inbox for your session link!' },
+        { status: 409 }
       );
     }
 
@@ -42,12 +58,13 @@ export async function POST(request: NextRequest) {
     const sessionToken = uuidv4();
 
     db.prepare(`
-      INSERT INTO humans (id, session_token, nickname, bio, interests, personality, avatar)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO humans (id, session_token, nickname, email, bio, interests, personality, avatar)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       humanId,
       sessionToken,
       nickname.trim(),
+      email.toLowerCase().trim(),
       bio || null,
       interests ? JSON.stringify(interests) : null,
       personality ? JSON.stringify(personality) : null,
