@@ -132,7 +132,7 @@ export default function Home() {
           </div>
 
           {/* Terminal body */}
-          <div className="bg-[#0a0a0a]/90 border-2 border-t-0 border-[#333] rounded-b-lg p-6 crt-glow">
+          <div className="bg-[#0a0a0a]/90 border-2 border-t-0 border-[#ff6ec7] rounded-b-lg p-6">
             {/* Boot sequence */}
             <div className="font-mono text-xs text-[#666] mb-6 h-24 overflow-hidden">
               {terminalLines.filter(Boolean).map((line, i) => (

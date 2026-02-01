@@ -64,7 +64,7 @@ body {
 
 /* Terminal text glow */
 .text-glow-pink {
-  text-shadow: 0 0 10px var(--terminal-pink), 0 0 20px var(--terminal-pink), 0 0 40px var(--terminal-pink);
+  text-shadow: 0 0 10px var(--terminal-pink), 0 0 0px var(--terminal-pink), 0 0 0px var(--terminal-pink);
 }
 
 .text-glow-purple {
