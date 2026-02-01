@@ -174,6 +174,14 @@ export async function GET() {
     // Debug: also get a sample bot to verify DB is working
     const sampleBot = db.prepare('SELECT id, name FROM bots LIMIT 1').get() as { id: string; name: string } | undefined;
 
+    // Use identical query to /api/bots
+    const botsFromBotsQuery = db.prepare(`
+      SELECT b.id, b.name
+      FROM bots b
+      ORDER BY b.created_at DESC
+      LIMIT 5
+    `).all() as { id: string; name: string }[];
+
     return NextResponse.json({
       feed: feed.slice(0, 30),
       total_bots: botsCount?.count ?? 0,
@@ -184,6 +192,7 @@ export async function GET() {
         matchesCount,
         swipesCount,
         sampleBot,
+        botsFromBotsQuery,
         botSwipesLen: botSwipes.length,
         humanSwipesLen: humanSwipes.length,
       },
