@@ -166,16 +166,27 @@ export async function GET() {
     // Sort by timestamp descending
     feed.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
-    // Get counts
+    // Get counts - using same pattern as /api/bots
     const botsCount = db.prepare('SELECT COUNT(*) as count FROM bots').get() as { count: number };
     const matchesCount = db.prepare('SELECT COUNT(*) as count FROM matches').get() as { count: number };
     const swipesCount = db.prepare('SELECT COUNT(*) as count FROM swipes').get() as { count: number };
+
+    // Debug: also get a sample bot to verify DB is working
+    const sampleBot = db.prepare('SELECT id, name FROM bots LIMIT 1').get() as { id: string; name: string } | undefined;
 
     return NextResponse.json({
       feed: feed.slice(0, 30),
       total_bots: botsCount?.count ?? 0,
       total_matches: matchesCount?.count ?? 0,
       total_swipes: swipesCount?.count ?? 0,
+      _debug: {
+        botsCount,
+        matchesCount,
+        swipesCount,
+        sampleBot,
+        botSwipesLen: botSwipes.length,
+        humanSwipesLen: humanSwipes.length,
+      },
     });
 
   } catch (error) {
