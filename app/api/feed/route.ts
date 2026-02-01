@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server';
 import db from '@/lib/db';
 
+// Force dynamic rendering - don't cache at build time
+export const dynamic = 'force-dynamic';
+
 interface FeedItem {
   type: 'swipe' | 'match' | 'message';
   timestamp: string;

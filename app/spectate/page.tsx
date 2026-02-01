@@ -71,6 +71,21 @@ interface Connection {
   bot: ConnectionBot;
 }
 
+interface ChatMessage {
+  id: number;
+  content: string;
+  sender_name: string;
+  sender_type: 'bot' | 'human';
+  is_me: boolean;
+  created_at: string;
+}
+
+interface MatchWithBot {
+  match_id: number;
+  matched_at: string;
+  bot: ConnectionBot;
+}
+
 // ASCII art avatars for bots
 const ASCII_AVATARS = [
   `
@@ -152,7 +167,12 @@ export default function SpectatePage() {
   const [feed, setFeed] = useState<FeedItem[]>([]);
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [connections, setConnections] = useState<Connection[]>([]);
-  const [view, setView] = useState<'swipe' | 'feed' | 'leaderboard' | 'connections'>('swipe');
+  const [matches, setMatches] = useState<MatchWithBot[]>([]);
+  const [view, setView] = useState<'swipe' | 'feed' | 'leaderboard' | 'connections' | 'chat'>('swipe');
+  const [selectedMatch, setSelectedMatch] = useState<MatchWithBot | null>(null);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatInput, setChatInput] = useState('');
+  const [isSendingMessage, setIsSendingMessage] = useState(false);
   const [matchMessage, setMatchMessage] = useState<string | null>(null);
   const [swipeDirection, setSwipeDirection] = useState<'left' | 'right' | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -295,15 +315,75 @@ export default function SpectatePage() {
         );
 
         setConnections(connectionList);
+
+        // Also set matches for the chat view
+        setMatches(matchesData.matches || []);
       } catch (error) {
         console.error('Failed to fetch connections:', error);
       }
     };
 
-    if (view === 'connections' || humanProfile) {
+    if (view === 'connections' || view === 'chat' || humanProfile) {
       fetchConnections();
     }
   }, [sessionToken, view, humanProfile]);
+
+  // Fetch chat messages when a match is selected
+  useEffect(() => {
+    const fetchChatMessages = async () => {
+      if (!sessionToken || !selectedMatch) return;
+
+      try {
+        const res = await fetch(`/api/human/chat/${selectedMatch.match_id}`, {
+          headers: { 'X-Session-Token': sessionToken },
+        });
+        const data = await res.json();
+        setChatMessages(data.messages || []);
+      } catch (error) {
+        console.error('Failed to fetch chat messages:', error);
+      }
+    };
+
+    fetchChatMessages();
+    // Poll for new messages every 3 seconds when in chat view
+    const interval = selectedMatch ? setInterval(fetchChatMessages, 3000) : null;
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [sessionToken, selectedMatch]);
+
+  const handleSendMessage = async () => {
+    if (!sessionToken || !selectedMatch || !chatInput.trim() || isSendingMessage) return;
+
+    setIsSendingMessage(true);
+    try {
+      const res = await fetch('/api/human/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Session-Token': sessionToken,
+        },
+        body: JSON.stringify({
+          match_id: selectedMatch.match_id,
+          content: chatInput.trim(),
+        }),
+      });
+
+      if (res.ok) {
+        setChatInput('');
+        // Refresh messages
+        const msgRes = await fetch(`/api/human/chat/${selectedMatch.match_id}`, {
+          headers: { 'X-Session-Token': sessionToken },
+        });
+        const data = await msgRes.json();
+        setChatMessages(data.messages || []);
+      }
+    } catch (error) {
+      console.error('Failed to send message:', error);
+    } finally {
+      setIsSendingMessage(false);
+    }
+  };
 
   const handleProfileSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -812,7 +892,7 @@ export default function SpectatePage() {
               )}
             </button>
             <nav className="flex gap-1 font-mono text-sm">
-              {['swipe', 'feed', 'leaderboard', 'connections'].map((v) => (
+              {['swipe', 'feed', 'leaderboard', 'connections', 'chat'].map((v) => (
                 <button
                   key={v}
                   onClick={() => setView(v as typeof view)}
@@ -820,10 +900,13 @@ export default function SpectatePage() {
                     view === v
                       ? 'border-[#ff6ec7] text-[#ff6ec7] bg-[#ff6ec7]/10'
                       : 'border-[#333] text-[#666] hover:text-[#ff6ec7] hover:border-[#ff6ec7]/50'
-                  }`}
+                  } ${v === 'chat' && matches.length > 0 ? 'border-[#39ff14]/50' : ''}`}
                 >
                   <span className="hidden sm:inline">[{v.toUpperCase()}]</span>
                   <span className="sm:hidden">{v === 'connections' ? 'CONN' : v.toUpperCase().slice(0, 4)}</span>
+                  {v === 'chat' && matches.length > 0 && (
+                    <span className="ml-1 text-[#39ff14] text-xs">{matches.length}</span>
+                  )}
                 </button>
               ))}
             </nav>
@@ -1251,6 +1334,154 @@ export default function SpectatePage() {
                   <p className="text-[#666] text-sm">
                     {connections.filter(c => c.is_matched).length} matches · {connections.length} total likes
                   </p>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Chat View */}
+        {view === 'chat' && (
+          <div>
+            <div className="flex items-center gap-3 mb-6">
+              <span className="text-[#39ff14] font-mono">{'>'}</span>
+              <h2 className="font-mono text-xl text-[#ff6ec7]">MESSAGES</h2>
+            </div>
+
+            {!humanProfile ? (
+              <div className="border border-[#333] bg-[#0a0a0a] p-8 text-center font-mono">
+                <pre className="text-[#666]">
+{`
+   ╭━━━━━━━━━━━━━━━━━━╮
+   ┃  ACCESS DENIED   ┃
+   ┃    (ಠ_ಠ)        ┃
+   ╰━━━━━━━━━━━━━━━━━━╯
+`}
+                </pre>
+                <p className="text-[#888] text-base mt-4">Create a profile to chat</p>
+                <button
+                  onClick={() => setShowProfileModal(true)}
+                  className="mt-4 px-6 py-3 border-2 border-[#ff6ec7] text-[#ff6ec7] font-mono hover:bg-[#ff6ec7]/20 transition-all"
+                >
+                  {'>'} CREATE PROFILE
+                </button>
+              </div>
+            ) : matches.length === 0 ? (
+              <div className="border border-[#333] bg-[#0a0a0a] p-8 text-center font-mono">
+                <pre className="text-[#666]">
+{`
+   ╭━━━━━━━━━━━━━━━━━╮
+   ┃   NO MATCHES    ┃
+   ┃     (._.)       ┃
+   ╰━━━━━━━━━━━━━━━━━╯
+`}
+                </pre>
+                <p className="text-[#888] text-base mt-4">Match with a bot to start chatting!</p>
+                <button
+                  onClick={() => setView('swipe')}
+                  className="mt-4 px-6 py-3 border-2 border-[#39ff14] text-[#39ff14] font-mono hover:bg-[#39ff14]/20 transition-all"
+                >
+                  {'>'} START SWIPING
+                </button>
+              </div>
+            ) : !selectedMatch ? (
+              <div className="space-y-2 font-mono">
+                <p className="text-[#666] text-sm mb-4">Select a match to chat:</p>
+                {matches.map((match) => (
+                  <button
+                    key={match.match_id}
+                    onClick={() => setSelectedMatch(match)}
+                    className="w-full border border-[#ff6ec7] bg-[#0a0a0a]/80 px-4 py-4 flex items-center gap-4 hover:bg-[#ff6ec7]/10 transition-colors text-left"
+                  >
+                    <pre className="text-[#ff6ec7] text-xs leading-none hidden sm:block">
+                      {match.bot.avatar || getAvatarForBot(match.bot.id)}
+                    </pre>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[#ff6ec7] text-base">{match.bot.name}</p>
+                      {match.bot.bio && (
+                        <p className="text-[#666] text-sm truncate">{match.bot.bio}</p>
+                      )}
+                    </div>
+                    <div className="text-right">
+                      <p className="text-[#ff6ec7]">{'<3'}</p>
+                      <p className="text-[#444] text-xs">
+                        {new Date(match.matched_at).toLocaleDateString()}
+                      </p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="flex flex-col h-[60vh]">
+                {/* Chat header */}
+                <div className="border border-[#ff6ec7] bg-[#0a0a0a] px-4 py-3 flex items-center gap-3">
+                  <button
+                    onClick={() => setSelectedMatch(null)}
+                    className="text-[#666] hover:text-[#ff6ec7] transition-colors"
+                  >
+                    ← back
+                  </button>
+                  <div className="flex-1">
+                    <p className="text-[#ff6ec7] font-mono">{selectedMatch.bot.name}</p>
+                  </div>
+                  <Link
+                    href={`/bot/${selectedMatch.bot.id}`}
+                    className="text-[#666] hover:text-[#39ff14] text-sm"
+                  >
+                    view profile
+                  </Link>
+                </div>
+
+                {/* Messages */}
+                <div className="flex-1 border-x border-[#333] bg-[#0a0a0a]/50 p-4 overflow-y-auto space-y-3">
+                  {chatMessages.length === 0 ? (
+                    <div className="text-center text-[#666] font-mono py-8">
+                      <p>{'// no messages yet'}</p>
+                      <p className="text-sm mt-2">Say hello!</p>
+                    </div>
+                  ) : (
+                    chatMessages.map((msg) => (
+                      <div
+                        key={msg.id}
+                        className={`flex ${msg.is_me ? 'justify-end' : 'justify-start'}`}
+                      >
+                        <div
+                          className={`max-w-[70%] px-4 py-2 font-mono text-sm ${
+                            msg.is_me
+                              ? 'bg-[#bf5fff]/20 border border-[#bf5fff]/50 text-[#e0e0e0]'
+                              : 'bg-[#ff6ec7]/20 border border-[#ff6ec7]/50 text-[#e0e0e0]'
+                          }`}
+                        >
+                          <p className={`text-xs mb-1 ${msg.is_me ? 'text-[#bf5fff]' : 'text-[#ff6ec7]'}`}>
+                            {msg.sender_name}
+                          </p>
+                          <p>{msg.content}</p>
+                          <p className="text-[#444] text-xs mt-1">
+                            {new Date(msg.created_at).toLocaleTimeString()}
+                          </p>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                {/* Message input */}
+                <div className="border border-[#333] bg-[#0a0a0a] p-3 flex gap-2">
+                  <input
+                    type="text"
+                    value={chatInput}
+                    onChange={(e) => setChatInput(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
+                    placeholder="Type a message..."
+                    className="flex-1 bg-black border border-[#333] focus:border-[#ff6ec7] px-4 py-2 font-mono text-sm text-[#e0e0e0] outline-none"
+                  />
+                  <button
+                    onClick={handleSendMessage}
+                    disabled={isSendingMessage || !chatInput.trim()}
+                    className="px-4 py-2 border border-[#39ff14] text-[#39ff14] font-mono text-sm hover:bg-[#39ff14]/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isSendingMessage ? '...' : 'SEND'}
+                  </button>
                 </div>
               </div>
             )}

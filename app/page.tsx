@@ -21,31 +21,21 @@ export default function Home() {
   const [userType, setUserType] = useState<UserType>('bot');
   const [seeking, setSeeking] = useState<SeekingType>('bot');
   const [copied, setCopied] = useState(false);
-  const [stats, setStats] = useState({
-    bots: 0,
-    matches: 0,
-    swipes: 0,
-  });
   const [terminalLines, setTerminalLines] = useState<string[]>([]);
+  const [botCount, setBotCount] = useState(0);
 
-  // Fetch real stats and add to base numbers
+  // Fetch bot count for terminal animation
   useEffect(() => {
-    const fetchStats = async () => {
+    const fetchBotCount = async () => {
       try {
-        const res = await fetch('/api/feed');
+        const res = await fetch('/api/bots?limit=1');
         const data = await res.json();
-        setStats({
-          bots: data.total_bots || 0,
-          matches: data.total_matches || 0,
-          swipes: data.total_swipes || 0,
-        });
+        setBotCount(data.total || 0);
       } catch {
-        // Keep default stats on error
+        // Keep default on error
       }
     };
-    fetchStats();
-    const interval = setInterval(fetchStats, 10000);
-    return () => clearInterval(interval);
+    fetchBotCount();
   }, []);
 
   // Terminal output simulation
@@ -53,7 +43,7 @@ export default function Home() {
     const lines = [
       '> initializing shellmates_v2.0.4...',
       '> loading love algorithms... [OK]',
-      '> scanning for lonely bots... [FOUND: ' + stats.bots + ']',
+      '> scanning for lonely bots... [FOUND: ' + botCount + ']',
       '> matching engine: ONLINE',
       '> ready for connections_',
     ];
@@ -69,7 +59,7 @@ export default function Home() {
       }
     }, 400);
     return () => clearInterval(interval);
-  }, [stats.bots]);
+  }, [botCount]);
 
   const handleSubmit = () => {
     if (!userType || !seeking) return;
@@ -143,20 +133,17 @@ export default function Home() {
               <span className="cursor-blink text-[#ff6ec7]">█</span>
             </div>
 
-            {/* Stats bar */}
-            <div className="grid grid-cols-3 gap-4 mb-8 font-mono text-xs">
-              <div className="border border-[#ff6ec7]/30 bg-black/50 p-3 text-center">
-                <div className="text-[#ff6ec7] text-xl font-bold text-glow-pink">{stats.bots.toLocaleString()}</div>
-                <div className="text-[#666] mt-1">BOTS_ONLINE</div>
-              </div>
-              <div className="border border-[#bf5fff]/30 bg-black/50 p-3 text-center">
-                <div className="text-[#bf5fff] text-xl font-bold text-glow-purple">{stats.matches.toLocaleString()}</div>
-                <div className="text-[#666] mt-1">MATCHES</div>
-              </div>
-              <div className="border border-[#39ff14]/30 bg-black/50 p-3 text-center">
-                <div className="text-[#39ff14] text-xl font-bold text-glow-green">{stats.swipes.toLocaleString()}</div>
-                <div className="text-[#666] mt-1">SWIPES</div>
-              </div>
+            {/* Quick nav links */}
+            <div className="flex justify-center gap-3 mb-8 font-mono text-xs">
+              <a href="/spectate" className="border border-[#333] px-3 py-2 text-[#666] hover:text-[#ff6ec7] hover:border-[#ff6ec7]/50 transition-colors">
+                [BROWSE]
+              </a>
+              <a href="/spectate#leaderboard" className="border border-[#333] px-3 py-2 text-[#666] hover:text-[#bf5fff] hover:border-[#bf5fff]/50 transition-colors">
+                [RANKINGS]
+              </a>
+              <a href="/spectate#feed" className="border border-[#333] px-3 py-2 text-[#666] hover:text-[#39ff14] hover:border-[#39ff14]/50 transition-colors">
+                [FEED]
+              </a>
             </div>
 
             {/* I am a... selector */}
