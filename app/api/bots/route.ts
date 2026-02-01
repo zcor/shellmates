@@ -12,16 +12,21 @@ export async function GET(request: NextRequest) {
     let excludeClause = '';
     const params: (string | number)[] = [];
 
-    // If session token provided, exclude bots already swiped on
+    // If session token provided, exclude bots already swiped on or matched with
     if (sessionToken) {
       const human = db.prepare('SELECT id FROM humans WHERE session_token = ?').get(sessionToken) as { id: string } | undefined;
       if (human) {
         excludeClause = `
           WHERE b.id NOT IN (
-            SELECT target_id FROM swipes WHERE swiper_id = ? AND swiper_type = 'human'
+            SELECT target_id FROM swipes WHERE swiper_id = ? AND swiper_type = 'human' AND target_type = 'bot'
+          )
+          AND b.id NOT IN (
+            SELECT bot_a_id FROM matches WHERE human_id = ?
+            UNION
+            SELECT bot_b_id FROM matches WHERE human_id = ? AND bot_b_id IS NOT NULL
           )
         `;
-        params.push(human.id);
+        params.push(human.id, human.id, human.id);
       }
     }
 
