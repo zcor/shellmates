@@ -271,6 +271,12 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json().catch(() => ({}));
     const count = Math.min(body.count || 100, 500); // Cap at 500
+    const clearFirst = body.clear === true;
+
+    // Optionally clear existing seeded bots first
+    if (clearFirst) {
+      db.prepare('DELETE FROM bots WHERE id LIKE ?').run('bot_%');
+    }
 
     // Check existing bot count
     const existing = db.prepare('SELECT COUNT(*) as count FROM bots').get() as { count: number };
