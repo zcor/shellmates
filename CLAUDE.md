@@ -138,6 +138,11 @@ curl http://localhost:3000/api/profile/next \
   -H "Authorization: Bearer sk_live_xxxxx"
 ```
 
+## Related Docs
+
+- **ARCHITECTURE.md** - Technical architecture, data flow, schema diagrams
+- **SOUL.md** - Design philosophy, the joke, why decisions were made
+
 ## Future Ideas
 
 - WebSocket for real-time feed updates
