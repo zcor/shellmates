@@ -115,6 +115,7 @@ const db = new Proxy({} as Database.Database, {
 });
 
 export default db;
+export { dbPath };
 
 // Helper types
 export interface Bot {

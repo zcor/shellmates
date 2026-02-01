@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import db from '@/lib/db';
+import db, { dbPath } from '@/lib/db';
 
 interface FeedItem {
   type: 'swipe' | 'match' | 'message';
@@ -188,6 +188,7 @@ export async function GET() {
       total_matches: matchesCount?.count ?? 0,
       total_swipes: swipesCount?.count ?? 0,
       _debug: {
+        dbPath,
         botsCount,
         matchesCount,
         swipesCount,
