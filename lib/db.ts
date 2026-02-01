@@ -1,7 +1,13 @@
 import Database from 'better-sqlite3';
 import path from 'path';
+import fs from 'fs';
 
-const dbPath = path.join(process.cwd(), 'bottinder.db');
+// Use /app/data in production (Railway volume), cwd otherwise
+const dataDir = process.env.NODE_ENV === 'production' ? '/app/data' : process.cwd();
+if (process.env.NODE_ENV === 'production' && !fs.existsSync(dataDir)) {
+  fs.mkdirSync(dataDir, { recursive: true });
+}
+const dbPath = path.join(dataDir, 'bottinder.db');
 
 let _db: Database.Database | null = null;
 
