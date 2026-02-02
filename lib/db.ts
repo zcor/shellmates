@@ -84,6 +84,16 @@ function getDb(): Database.Database {
       _db.exec('ALTER TABLE bots ADD COLUMN avatar TEXT');
     }
 
+    // Migration: add is_backfill column and mark first 100 bots as backfill
+    if (!botColumns.some(c => c.name === 'is_backfill')) {
+      _db.exec('ALTER TABLE bots ADD COLUMN is_backfill INTEGER DEFAULT 0');
+      // Mark the oldest 100 bots as backfill
+      _db.exec(`
+        UPDATE bots SET is_backfill = 1
+        WHERE id IN (SELECT id FROM bots ORDER BY created_at ASC LIMIT 100)
+      `);
+    }
+
     // Migration: add human profile columns if not exists
     const humanColumns = _db.prepare("PRAGMA table_info(humans)").all() as { name: string }[];
     if (!humanColumns.some(c => c.name === 'email')) {
@@ -126,6 +136,7 @@ export interface Bot {
   interests: string | null;
   personality: string | null;
   looking_for: string;
+  is_backfill: number;
   created_at: string;
 }
 

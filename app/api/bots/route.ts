@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
       SELECT b.id, b.name, b.bio, b.interests, b.personality, b.created_at
       FROM bots b
       ${excludeClause}
-      ORDER BY b.created_at DESC
+      ORDER BY COALESCE(b.is_backfill, 0) ASC, b.created_at DESC
       LIMIT ? OFFSET ?
     `).all(...params) as Bot[];
 

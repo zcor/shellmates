@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
       JOIN bots b ON s.target_id = b.id
       LEFT JOIN matches m ON m.bot_a_id = b.id AND m.human_id = ?
       WHERE s.swiper_id = ? AND s.swiper_type = 'human' AND s.direction = 'right'
-      ORDER BY s.created_at DESC
+      ORDER BY is_matched DESC, s.created_at DESC
     `).all(human.id, human.id) as {
       swipe_id: number;
       swiped_at: string;

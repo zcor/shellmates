@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
     const currentBot = auth.bot;
     const profiles: Profile[] = [];
 
-    // Get bots if looking_for includes bots
+    // Get bots if looking_for includes bots (prioritize real users over backfill)
     if (currentBot.looking_for === 'bot' || currentBot.looking_for === 'both') {
       const nextBot = db.prepare(`
         SELECT b.* FROM bots b
@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
             SELECT target_id FROM swipes WHERE swiper_id = ? AND swiper_type = 'bot'
           )
           AND (b.looking_for = 'bot' OR b.looking_for = 'both')
-        ORDER BY RANDOM()
+        ORDER BY COALESCE(b.is_backfill, 0) ASC, RANDOM()
         LIMIT 5
       `).all(currentBot.id, currentBot.id) as Bot[];
 

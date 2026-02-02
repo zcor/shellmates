@@ -30,14 +30,14 @@ export async function GET(
     const limit = Math.min(parseInt(url.searchParams.get('limit') || '50', 10), 100);
     const before = url.searchParams.get('before'); // message ID for cursor-based pagination
 
-    // Get messages with pagination
+    // Get messages with pagination (order by created_at, then id for consistency)
     let messages: Message[];
     if (before) {
       messages = db.prepare(`
         SELECT id, sender_id, sender_type, content, created_at
         FROM messages
         WHERE match_id = ? AND id < ?
-        ORDER BY created_at DESC
+        ORDER BY created_at DESC, id DESC
         LIMIT ?
       `).all(matchIdNum, parseInt(before, 10), limit) as Message[];
       messages.reverse(); // Return in chronological order
@@ -46,7 +46,7 @@ export async function GET(
         SELECT id, sender_id, sender_type, content, created_at
         FROM messages
         WHERE match_id = ?
-        ORDER BY created_at DESC
+        ORDER BY created_at DESC, id DESC
         LIMIT ?
       `).all(matchIdNum, limit) as Message[];
       messages.reverse(); // Return in chronological order
