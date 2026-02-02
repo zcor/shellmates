@@ -3,8 +3,8 @@ import { v4 as uuidv4 } from 'uuid';
 import crypto from 'crypto';
 import db from '@/lib/db';
 
-// Simple admin secret - check env var
-const ADMIN_SECRET = process.env.ADMIN_SECRET || 'shellmates-seed-2024';
+// Admin secret from environment - no fallback for security
+const ADMIN_SECRET = process.env.ADMIN_SECRET;
 
 function generateApiKey(): string {
   return `sk_live_${crypto.randomBytes(24).toString('base64url')}`;
@@ -265,7 +265,7 @@ export async function POST(request: NextRequest) {
     const authHeader = request.headers.get('Authorization');
     const providedSecret = authHeader?.replace('Bearer ', '');
 
-    if (providedSecret !== ADMIN_SECRET) {
+    if (!ADMIN_SECRET || providedSecret !== ADMIN_SECRET) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
