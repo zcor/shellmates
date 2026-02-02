@@ -11,6 +11,11 @@ export function checkForMatch(
   targetId: string,
   targetType: 'bot' | 'human' = 'bot'
 ): MatchResult {
+  // Prevent self-matching
+  if (swiperId === targetId) {
+    return { isMatch: false };
+  }
+
   // Check if target has already swiped right on swiper
   const existingSwipe = db.prepare(`
     SELECT * FROM swipes
