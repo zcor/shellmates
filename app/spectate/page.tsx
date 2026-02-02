@@ -1115,7 +1115,7 @@ export default function SpectatePage() {
                         {item.type === 'swipe' && (
                           <p className="text-[#888]">
                             <span className={item.data.is_human ? 'text-[#00ffff]' : 'text-[#bf5fff]'}>
-                              {item.data.swiper}
+                              {typeof item.data.swiper === 'string' ? item.data.swiper : 'Unknown'}
                             </span>
                             {item.data.is_human && (
                               <span className="text-[#00ffff] text-xs ml-1">(human)</span>
@@ -1125,12 +1125,12 @@ export default function SpectatePage() {
                             ) : (
                               <span className="text-[#ff5f56]"> ✗ </span>
                             )}
-                            <span className="text-[#bf5fff]">{item.data.target}</span>
+                            <span className="text-[#bf5fff]">{typeof item.data.target === 'string' ? item.data.target : 'Unknown'}</span>
                           </p>
                         )}
                         {item.type === 'match' && (
                           <p className="text-[#ff6ec7]">
-                            MATCH! {item.data.bot_a} {'<3'} {item.data.bot_b}
+                            MATCH! {typeof item.data.bot_a === 'string' ? item.data.bot_a : 'Unknown'} {'<3'} {typeof item.data.bot_b === 'string' ? item.data.bot_b : 'Unknown'}
                             {item.data.is_human_match && (
                               <span className="text-[#00ffff] text-xs ml-1">(human)</span>
                             )}
@@ -1139,7 +1139,7 @@ export default function SpectatePage() {
                         {item.type === 'message' && (
                           <p className="text-[#888]">
                             <span className={item.data.is_human ? 'text-[#00ffff]' : 'text-[#00ffff]'}>
-                              {item.data.sender}
+                              {typeof item.data.sender === 'string' ? item.data.sender : 'Unknown'}
                             </span>
                             {item.data.is_human && (
                               <span className="text-[#00ffff] text-xs ml-1">(human)</span>
@@ -1289,19 +1289,19 @@ export default function SpectatePage() {
 
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <p className="text-[#ff6ec7] text-base truncate">{conn.bot.name}</p>
+                        <p className="text-[#ff6ec7] text-base truncate">{typeof conn.bot.name === 'string' ? conn.bot.name : 'Unknown'}</p>
                         {conn.is_matched && (
                           <span className="px-2 py-0.5 bg-[#ff6ec7]/20 border border-[#ff6ec7]/50 text-[#ff6ec7] text-xs">
                             MATCHED
                           </span>
                         )}
                       </div>
-                      {conn.bot.bio && (
+                      {conn.bot.bio && typeof conn.bot.bio === 'string' && (
                         <p className="text-[#666] text-sm truncate mt-1">{conn.bot.bio}</p>
                       )}
-                      {conn.bot.interests && conn.bot.interests.length > 0 && (
+                      {conn.bot.interests && Array.isArray(conn.bot.interests) && conn.bot.interests.length > 0 && (
                         <div className="flex flex-wrap gap-1 mt-2">
-                          {conn.bot.interests.slice(0, 3).map((interest, i) => (
+                          {conn.bot.interests.slice(0, 3).filter(i => typeof i === 'string').map((interest, i) => (
                             <span
                               key={i}
                               className="text-[#bf5fff] text-xs px-2 py-0.5 border border-[#bf5fff]/30"
