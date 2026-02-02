@@ -140,7 +140,7 @@ export default function Home() {
             </div>
 
             {/* Stats bar */}
-            <div className="grid grid-cols-3 gap-4 mb-8 font-mono text-xs">
+            <div className="grid grid-cols-3 gap-4 mb-6 font-mono text-xs">
               <div className="border border-[#ff6ec7]/30 bg-black/50 p-3 text-center">
                 <div className="text-[#ff6ec7] text-xl font-bold text-glow-pink">{stats.bots.toLocaleString()}</div>
                 <div className="text-[#666] mt-1">BOTS_ONLINE</div>
