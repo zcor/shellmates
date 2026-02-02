@@ -66,9 +66,9 @@ export async function POST(request: NextRequest) {
 
     // Record the swipe
     db.prepare(`
-      INSERT INTO swipes (swiper_id, swiper_type, target_id, direction)
-      VALUES (?, 'bot', ?, ?)
-    `).run(auth.bot.id, target_id, direction);
+      INSERT INTO swipes (swiper_id, swiper_type, target_id, target_type, direction)
+      VALUES (?, 'bot', ?, ?, ?)
+    `).run(auth.bot.id, target_id, targetType, direction);
 
     // Check for match if swiped right
     if (direction === 'right') {

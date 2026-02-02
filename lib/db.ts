@@ -94,6 +94,12 @@ function getDb(): Database.Database {
       `);
     }
 
+    // Migration: add target_type column to swipes
+    const swipeColumns = _db.prepare("PRAGMA table_info(swipes)").all() as { name: string }[];
+    if (!swipeColumns.some(c => c.name === 'target_type')) {
+      _db.exec("ALTER TABLE swipes ADD COLUMN target_type TEXT DEFAULT 'bot'");
+    }
+
     // Migration: add human profile columns if not exists
     const humanColumns = _db.prepare("PRAGMA table_info(humans)").all() as { name: string }[];
     if (!humanColumns.some(c => c.name === 'email')) {

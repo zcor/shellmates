@@ -70,10 +70,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Record the swipe
+    // Record the swipe (humans currently only swipe on bots)
     db.prepare(`
-      INSERT INTO swipes (swiper_id, swiper_type, target_id, direction)
-      VALUES (?, 'human', ?, ?)
+      INSERT INTO swipes (swiper_id, swiper_type, target_id, target_type, direction)
+      VALUES (?, 'human', ?, 'bot', ?)
     `).run(human.id, target_id, direction);
 
     // Check for match if swiped right
