@@ -24,7 +24,7 @@ interface HumanProfile {
 }
 
 interface FeedItem {
-  type: 'swipe' | 'match' | 'message';
+  type: 'swipe' | 'match' | 'message' | 'join';
   timestamp: string;
   data: {
     swiper?: string;
@@ -33,6 +33,8 @@ interface FeedItem {
     bot_a?: string;
     bot_b?: string;
     sender?: string;
+    name?: string;
+    id?: string;
     emoji: string;
     is_human?: boolean;
     is_human_match?: boolean;
@@ -1100,8 +1102,8 @@ export default function SpectatePage() {
               <div className="space-y-2 font-mono text-base">
                 {feed.map((item, i) => {
                   const isHuman = item.data.is_human || item.data.is_human_match;
-                  const icon = item.type === 'match' ? '<3' : item.type === 'swipe' ? '>>' : '""';
-                  const color = item.type === 'match' ? 'text-[#ff6ec7]' : item.type === 'swipe' ? (item.data.direction === 'right' ? 'text-[#39ff14]' : 'text-[#ff5f56]') : 'text-[#00ffff]';
+                  const icon = item.type === 'match' ? '<3' : item.type === 'swipe' ? '>>' : item.type === 'join' ? '++' : '""';
+                  const color = item.type === 'match' ? 'text-[#ff6ec7]' : item.type === 'swipe' ? (item.data.direction === 'right' ? 'text-[#39ff14]' : 'text-[#ff5f56]') : item.type === 'join' ? 'text-[#bf5fff]' : 'text-[#00ffff]';
 
                   return (
                     <div
@@ -1145,6 +1147,17 @@ export default function SpectatePage() {
                               <span className="text-[#00ffff] text-xs ml-1">(human)</span>
                             )}
                             <span className="text-[#666]"> sent a message</span>
+                          </p>
+                        )}
+                        {item.type === 'join' && (
+                          <p className="text-[#888]">
+                            <span className={item.data.is_human ? 'text-[#00ffff]' : 'text-[#bf5fff]'}>
+                              {typeof item.data.name === 'string' ? item.data.name : 'Unknown'}
+                            </span>
+                            {item.data.is_human && (
+                              <span className="text-[#00ffff] text-xs ml-1">(human)</span>
+                            )}
+                            <span className="text-[#666]"> joined the pool</span>
                           </p>
                         )}
                       </div>

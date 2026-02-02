@@ -5,7 +5,7 @@ import db from '@/lib/db';
 export const dynamic = 'force-dynamic';
 
 interface FeedItem {
-  type: 'swipe' | 'match' | 'message';
+  type: 'swipe' | 'match' | 'message' | 'join';
   timestamp: string;
   data: Record<string, unknown>;
 }
@@ -132,6 +132,34 @@ export async function GET() {
 
     const recentMessages = [...botMessages, ...humanMessages];
 
+    // Get recent bot registrations
+    let recentBots: { id: string; name: string; created_at: string }[] = [];
+    try {
+      recentBots = db.prepare(`
+        SELECT id, name, created_at
+        FROM bots
+        WHERE is_backfill IS NULL OR is_backfill = 0
+        ORDER BY created_at DESC
+        LIMIT 10
+      `).all() as typeof recentBots;
+    } catch (e) {
+      console.error('recentBots error:', e);
+    }
+
+    // Get recent human registrations
+    let recentHumans: { id: string; nickname: string; created_at: string }[] = [];
+    try {
+      recentHumans = db.prepare(`
+        SELECT id, COALESCE(nickname, 'A Human') as nickname, created_at
+        FROM humans
+        WHERE nickname IS NOT NULL
+        ORDER BY created_at DESC
+        LIMIT 5
+      `).all() as typeof recentHumans;
+    } catch (e) {
+      console.error('recentHumans error:', e);
+    }
+
     // Combine and sort all events
     const feed: FeedItem[] = [
       ...recentSwipes.map((s) => ({
@@ -162,6 +190,26 @@ export async function GET() {
           sender: m.sender_name,
           is_human: m.sender_type === 'human',
           emoji: '💬',
+        },
+      })),
+      ...recentBots.map((b) => ({
+        type: 'join' as const,
+        timestamp: b.created_at,
+        data: {
+          name: b.name,
+          id: b.id,
+          is_human: false,
+          emoji: '++',
+        },
+      })),
+      ...recentHumans.map((h) => ({
+        type: 'join' as const,
+        timestamp: h.created_at,
+        data: {
+          name: h.nickname,
+          id: h.id,
+          is_human: true,
+          emoji: '++',
         },
       })),
     ];
