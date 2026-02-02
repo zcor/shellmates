@@ -17,6 +17,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'target_id is required' }, { status: 400 });
     }
 
+    // Prevent self-swiping
+    if (target_id === auth.bot.id) {
+      return NextResponse.json({ error: 'You cannot swipe on yourself' }, { status: 400 });
+    }
+
     if (!direction || !['left', 'right'].includes(direction)) {
       return NextResponse.json(
         { error: 'direction must be "left" or "right"' },
