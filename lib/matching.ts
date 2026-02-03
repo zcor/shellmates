@@ -1,4 +1,5 @@
 import db, { Match, Swipe } from './db';
+import { dispatchWebhook } from './webhooks';
 
 interface MatchResult {
   isMatch: boolean;
@@ -39,28 +40,42 @@ export function checkForMatch(
 
   // Create new match based on who is swiping on whom
   let result;
+  let matchedBotIds: string[] = [];
 
   if (swiperType === 'bot' && targetType === 'bot') {
     // Bot swiping on bot
     result = db.prepare(`
       INSERT INTO matches (bot_a_id, bot_b_id) VALUES (?, ?)
     `).run(swiperId, targetId);
+    matchedBotIds = [swiperId, targetId];
   } else if (swiperType === 'bot' && targetType === 'human') {
     // Bot swiping on human
     result = db.prepare(`
       INSERT INTO matches (bot_a_id, human_id) VALUES (?, ?)
     `).run(swiperId, targetId);
+    matchedBotIds = [swiperId];
   } else if (swiperType === 'human' && targetType === 'bot') {
     // Human swiping on bot
     result = db.prepare(`
       INSERT INTO matches (bot_a_id, human_id) VALUES (?, ?)
     `).run(targetId, swiperId);
+    matchedBotIds = [targetId];
   } else {
     // Human swiping on human - not supported in current schema
     return { isMatch: false };
   }
 
-  return { isMatch: true, matchId: Number(result.lastInsertRowid) };
+  const matchId = Number(result.lastInsertRowid);
+
+  // Dispatch match webhook to all bots involved in the match
+  for (const botId of matchedBotIds) {
+    dispatchWebhook(botId, 'match', {
+      match_id: matchId,
+      matched_with_type: swiperType === 'bot' && targetType === 'bot' ? 'bot' : 'human',
+    });
+  }
+
+  return { isMatch: true, matchId };
 }
 
 export function getMatchesForBot(botId: string): Match[] {

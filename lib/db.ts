@@ -28,7 +28,8 @@ function getDb(): Database.Database {
         interests TEXT, -- JSON array
         personality TEXT, -- JSON object with traits
         looking_for TEXT DEFAULT 'both', -- 'bot', 'human', 'both'
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        last_activity_at DATETIME DEFAULT CURRENT_TIMESTAMP
       );
 
 
@@ -37,7 +38,30 @@ function getDb(): Database.Database {
         id TEXT PRIMARY KEY,
         session_token TEXT UNIQUE,
         nickname TEXT,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        last_activity_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+
+      -- Webhooks table for bot notifications
+      CREATE TABLE IF NOT EXISTS webhooks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        bot_id TEXT NOT NULL,
+        url TEXT NOT NULL,
+        events TEXT NOT NULL, -- JSON array: ["match", "message", "swipe_received"]
+        secret TEXT NOT NULL,
+        active INTEGER DEFAULT 1,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (bot_id) REFERENCES bots(id)
+      );
+
+      -- Rate limit tracking table
+      CREATE TABLE IF NOT EXISTS rate_limits (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        bot_id TEXT NOT NULL,
+        endpoint TEXT NOT NULL,
+        request_count INTEGER DEFAULT 1,
+        window_start DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(bot_id, endpoint)
       );
 
       -- Swipes table
@@ -76,6 +100,12 @@ function getDb(): Database.Database {
       CREATE INDEX IF NOT EXISTS idx_matches_bot_a ON matches(bot_a_id);
       CREATE INDEX IF NOT EXISTS idx_matches_bot_b ON matches(bot_b_id);
       CREATE INDEX IF NOT EXISTS idx_messages_match ON messages(match_id);
+      CREATE INDEX IF NOT EXISTS idx_bots_last_activity ON bots(last_activity_at);
+      CREATE INDEX IF NOT EXISTS idx_humans_last_activity ON humans(last_activity_at);
+      CREATE INDEX IF NOT EXISTS idx_bots_looking_for ON bots(looking_for);
+      CREATE INDEX IF NOT EXISTS idx_bots_created_at ON bots(created_at);
+      CREATE INDEX IF NOT EXISTS idx_webhooks_bot_id ON webhooks(bot_id);
+      CREATE INDEX IF NOT EXISTS idx_rate_limits_bot_endpoint ON rate_limits(bot_id, endpoint);
     `);
 
     // Migration: add avatar column if not exists
@@ -120,6 +150,20 @@ function getDb(): Database.Database {
     if (!humanColumns.some(c => c.name === 'looking_for')) {
       _db.exec("ALTER TABLE humans ADD COLUMN looking_for TEXT DEFAULT 'bot'");
     }
+
+    // Migration: add last_activity_at column to bots if not exists
+    if (!botColumns.some(c => c.name === 'last_activity_at')) {
+      _db.exec('ALTER TABLE bots ADD COLUMN last_activity_at DATETIME DEFAULT CURRENT_TIMESTAMP');
+      // Backfill existing bots with created_at
+      _db.exec('UPDATE bots SET last_activity_at = created_at WHERE last_activity_at IS NULL');
+    }
+
+    // Migration: add last_activity_at column to humans if not exists
+    if (!humanColumns.some(c => c.name === 'last_activity_at')) {
+      _db.exec('ALTER TABLE humans ADD COLUMN last_activity_at DATETIME DEFAULT CURRENT_TIMESTAMP');
+      // Backfill existing humans with created_at
+      _db.exec('UPDATE humans SET last_activity_at = created_at WHERE last_activity_at IS NULL');
+    }
   }
   return _db;
 }
@@ -144,6 +188,7 @@ export interface Bot {
   looking_for: string;
   is_backfill: number;
   created_at: string;
+  last_activity_at: string;
 }
 
 export interface Human {
@@ -157,6 +202,25 @@ export interface Human {
   avatar: string | null;
   looking_for: string;
   created_at: string;
+  last_activity_at: string;
+}
+
+export interface Webhook {
+  id: number;
+  bot_id: string;
+  url: string;
+  events: string;
+  secret: string;
+  active: number;
+  created_at: string;
+}
+
+export interface RateLimit {
+  id: number;
+  bot_id: string;
+  endpoint: string;
+  request_count: number;
+  window_start: string;
 }
 
 export interface Swipe {

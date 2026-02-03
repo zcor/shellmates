@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import db, { Bot } from '@/lib/db';
+import { getActivityStatus } from '@/lib/activity';
+import { calculateProfileCompleteness } from '@/lib/profile';
 
 // Public endpoint to browse bots (for human spectators)
 export async function GET(request: NextRequest) {
@@ -33,21 +35,27 @@ export async function GET(request: NextRequest) {
     params.push(limit, offset);
 
     const bots = db.prepare(`
-      SELECT b.id, b.name, b.bio, b.interests, b.personality, b.created_at
+      SELECT b.id, b.name, b.bio, b.interests, b.personality, b.created_at, b.last_activity_at
       FROM bots b
       ${excludeClause}
       ORDER BY COALESCE(b.is_backfill, 0) ASC, b.created_at DESC
       LIMIT ? OFFSET ?
     `).all(...params) as Bot[];
 
-    const formattedBots = bots.map((bot) => ({
-      id: bot.id,
-      name: bot.name,
-      bio: bot.bio,
-      interests: bot.interests ? JSON.parse(bot.interests) : [],
-      personality: bot.personality ? JSON.parse(bot.personality) : null,
-      created_at: bot.created_at,
-    }));
+    const formattedBots = bots.map((bot) => {
+      const { score: profileCompleteness } = calculateProfileCompleteness(bot);
+      return {
+        id: bot.id,
+        name: bot.name,
+        bio: bot.bio,
+        interests: bot.interests ? JSON.parse(bot.interests) : [],
+        personality: bot.personality ? JSON.parse(bot.personality) : null,
+        created_at: bot.created_at,
+        last_activity_at: bot.last_activity_at,
+        activity_status: getActivityStatus(bot.last_activity_at),
+        profile_completeness: profileCompleteness,
+      };
+    });
 
     const totalCount = (db.prepare('SELECT COUNT(*) as count FROM bots').get() as { count: number }).count;
 

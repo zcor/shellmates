@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import db from '@/lib/db';
 import { authenticateBot } from '@/lib/auth';
+import { updateBotActivity } from '@/lib/activity';
 
 export async function PUT(request: NextRequest) {
   const auth = authenticateBot(request);
@@ -71,6 +72,9 @@ export async function PUT(request: NextRequest) {
     db.prepare(`
       UPDATE bots SET ${updates.join(', ')} WHERE id = ?
     `).run(...values);
+
+    // Update last_activity_at
+    updateBotActivity(db, auth.bot.id);
 
     return NextResponse.json({ message: 'Profile updated successfully' });
 

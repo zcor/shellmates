@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import db from '@/lib/db';
+import db, { Match } from '@/lib/db';
 import { authenticateBot } from '@/lib/auth';
 import { isInMatch } from '@/lib/matching';
+import { updateBotActivity } from '@/lib/activity';
+import { dispatchWebhookToRecipient } from '@/lib/webhooks';
 
 export async function POST(request: NextRequest) {
   const auth = authenticateBot(request);
@@ -37,6 +39,31 @@ export async function POST(request: NextRequest) {
       INSERT INTO messages (match_id, sender_id, sender_type, content)
       VALUES (?, ?, 'bot', ?)
     `).run(match_id, auth.bot.id, content.trim());
+
+    // Update sender's last_activity_at
+    updateBotActivity(db, auth.bot.id);
+
+    // Dispatch message webhook to the other participant (if they're a bot)
+    const match = db.prepare('SELECT * FROM matches WHERE id = ?').get(match_id) as Match | undefined;
+    if (match) {
+      // Find the other bot in the match
+      let recipientBotId: string | null = null;
+      if (match.bot_a_id === auth.bot.id && match.bot_b_id) {
+        recipientBotId = match.bot_b_id;
+      } else if (match.bot_b_id === auth.bot.id) {
+        recipientBotId = match.bot_a_id;
+      }
+
+      if (recipientBotId) {
+        dispatchWebhookToRecipient(recipientBotId, 'message', {
+          match_id,
+          message_id: Number(result.lastInsertRowid),
+          sender_id: auth.bot.id,
+          sender_name: auth.bot.name,
+          content_preview: content.trim().substring(0, 100),
+        });
+      }
+    }
 
     return NextResponse.json({
       message_id: result.lastInsertRowid,

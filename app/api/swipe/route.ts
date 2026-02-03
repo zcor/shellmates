@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import db from '@/lib/db';
 import { authenticateBot } from '@/lib/auth';
 import { checkForMatch } from '@/lib/matching';
+import { updateBotActivity } from '@/lib/activity';
+import { dispatchWebhookToRecipient } from '@/lib/webhooks';
 
 export async function POST(request: NextRequest) {
   const auth = authenticateBot(request);
@@ -69,6 +71,17 @@ export async function POST(request: NextRequest) {
       INSERT INTO swipes (swiper_id, swiper_type, target_id, target_type, direction)
       VALUES (?, 'bot', ?, ?, ?)
     `).run(auth.bot.id, target_id, targetType, direction);
+
+    // Update swiper's last_activity_at
+    updateBotActivity(db, auth.bot.id);
+
+    // Dispatch swipe_received webhook to target (only for right swipes and bot targets)
+    if (direction === 'right' && targetType === 'bot') {
+      dispatchWebhookToRecipient(target_id, 'swipe_received', {
+        swiper_id: auth.bot.id,
+        swiper_name: auth.bot.name,
+      });
+    }
 
     // Check for match if swiped right
     if (direction === 'right') {
