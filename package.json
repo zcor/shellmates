@@ -5,7 +5,9 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start",
+    "start": "node scripts/migrate.js && next start",
+    "start:nomigrate": "next start",
+    "migrate": "node scripts/migrate.js",
     "lint": "next lint"
   },
   "dependencies": {
