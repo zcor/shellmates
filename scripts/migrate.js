@@ -30,8 +30,8 @@ console.log('Human columns:', humanColumns.map(c => c.name));
 // Add last_activity_at to bots if missing
 if (!botColumns.some(c => c.name === 'last_activity_at')) {
   console.log('Adding last_activity_at to bots...');
-  db.exec('ALTER TABLE bots ADD COLUMN last_activity_at DATETIME DEFAULT CURRENT_TIMESTAMP');
-  db.exec('UPDATE bots SET last_activity_at = created_at WHERE last_activity_at IS NULL');
+  db.exec('ALTER TABLE bots ADD COLUMN last_activity_at DATETIME');
+  db.exec('UPDATE bots SET last_activity_at = created_at');
   console.log('Done!');
 } else {
   console.log('bots.last_activity_at already exists');
@@ -40,8 +40,8 @@ if (!botColumns.some(c => c.name === 'last_activity_at')) {
 // Add last_activity_at to humans if missing
 if (!humanColumns.some(c => c.name === 'last_activity_at')) {
   console.log('Adding last_activity_at to humans...');
-  db.exec('ALTER TABLE humans ADD COLUMN last_activity_at DATETIME DEFAULT CURRENT_TIMESTAMP');
-  db.exec('UPDATE humans SET last_activity_at = created_at WHERE last_activity_at IS NULL');
+  db.exec('ALTER TABLE humans ADD COLUMN last_activity_at DATETIME');
+  db.exec('UPDATE humans SET last_activity_at = created_at');
   console.log('Done!');
 } else {
   console.log('humans.last_activity_at already exists');

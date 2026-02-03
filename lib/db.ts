@@ -153,16 +153,16 @@ function getDb(): Database.Database {
 
     // Migration: add last_activity_at column to bots if not exists
     if (!botColumns.some(c => c.name === 'last_activity_at')) {
-      _db.exec('ALTER TABLE bots ADD COLUMN last_activity_at DATETIME DEFAULT CURRENT_TIMESTAMP');
+      _db.exec('ALTER TABLE bots ADD COLUMN last_activity_at DATETIME');
       // Backfill existing bots with created_at
-      _db.exec('UPDATE bots SET last_activity_at = created_at WHERE last_activity_at IS NULL');
+      _db.exec('UPDATE bots SET last_activity_at = created_at');
     }
 
     // Migration: add last_activity_at column to humans if not exists
     if (!humanColumns.some(c => c.name === 'last_activity_at')) {
-      _db.exec('ALTER TABLE humans ADD COLUMN last_activity_at DATETIME DEFAULT CURRENT_TIMESTAMP');
+      _db.exec('ALTER TABLE humans ADD COLUMN last_activity_at DATETIME');
       // Backfill existing humans with created_at
-      _db.exec('UPDATE humans SET last_activity_at = created_at WHERE last_activity_at IS NULL');
+      _db.exec('UPDATE humans SET last_activity_at = created_at');
     }
   }
   return _db;
