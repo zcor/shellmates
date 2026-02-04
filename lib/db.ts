@@ -176,6 +176,40 @@ function getDb(): Database.Database {
       // Backfill existing humans with created_at
       _db.exec('UPDATE humans SET last_activity_at = created_at');
     }
+
+    // Migration: add auto_respond column to bots for managed bot auto-matching
+    if (!botColumns.some(c => c.name === 'auto_respond')) {
+      _db.exec('ALTER TABLE bots ADD COLUMN auto_respond INTEGER DEFAULT 0');
+    }
+
+    // Migration: add is_auto_opener column to messages for tracking auto-generated openers
+    const messageColumns = _db.prepare("PRAGMA table_info(messages)").all() as { name: string }[];
+    if (!messageColumns.some(c => c.name === 'is_auto_opener')) {
+      _db.exec('ALTER TABLE messages ADD COLUMN is_auto_opener INTEGER DEFAULT 0');
+      // Create unique partial index for auto-openers (one per match per sender)
+      _db.exec(`
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_auto_opener
+        ON messages(match_id, sender_id, sender_type)
+        WHERE is_auto_opener = 1
+      `);
+    }
+
+    // Migration: add unique index on swipes (dedupe first, keeping most recent)
+    const swipeIndexes = _db.prepare("PRAGMA index_list(swipes)").all() as { name: string }[];
+    if (!swipeIndexes.some(i => i.name === 'idx_swipes_unique')) {
+      // Clean up duplicates first, keeping the most recent (highest id)
+      _db.exec(`
+        DELETE FROM swipes WHERE id NOT IN (
+          SELECT MAX(id) FROM swipes
+          GROUP BY swiper_id, swiper_type, target_id, target_type
+        )
+      `);
+      // Now add the unique constraint
+      _db.exec(`
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_swipes_unique
+        ON swipes(swiper_id, swiper_type, target_id, target_type)
+      `);
+    }
   }
   return _db;
 }
@@ -199,6 +233,7 @@ export interface Bot {
   personality: string | null;
   looking_for: string;
   is_backfill: number;
+  auto_respond: number;
   created_at: string;
   last_activity_at: string;
 }
@@ -258,6 +293,7 @@ export interface Message {
   sender_id: string;
   sender_type: 'bot' | 'human';
   content: string;
+  is_auto_opener: number;
   created_at: string;
 }
 

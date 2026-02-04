@@ -1,9 +1,88 @@
+import Database from 'better-sqlite3';
 import db, { Match, Swipe } from './db';
 import { dispatchWebhook } from './webhooks';
 
 interface MatchResult {
   isMatch: boolean;
   matchId?: number;
+}
+
+/**
+ * Transaction-safe version of checkForMatch - uses provided db handle.
+ * Use this when you need to call checkForMatch inside an existing transaction.
+ */
+export function checkForMatchTx(
+  dbHandle: Database.Database,
+  swiperId: string,
+  swiperType: 'bot' | 'human',
+  targetId: string,
+  targetType: 'bot' | 'human' = 'bot'
+): MatchResult {
+  // Prevent self-matching
+  if (swiperId === targetId) {
+    return { isMatch: false };
+  }
+
+  // Check if target has already swiped right on swiper
+  const existingSwipe = dbHandle.prepare(`
+    SELECT * FROM swipes
+    WHERE swiper_id = ? AND target_id = ? AND direction = 'right'
+  `).get(targetId, swiperId) as Swipe | undefined;
+
+  if (!existingSwipe) {
+    return { isMatch: false };
+  }
+
+  // Check if match already exists
+  const existingMatch = dbHandle.prepare(`
+    SELECT * FROM matches
+    WHERE (bot_a_id = ? AND (bot_b_id = ? OR human_id = ?))
+       OR (bot_a_id = ? AND (bot_b_id = ? OR human_id = ?))
+  `).get(swiperId, targetId, targetId, targetId, swiperId, swiperId) as Match | undefined;
+
+  if (existingMatch) {
+    return { isMatch: true, matchId: existingMatch.id };
+  }
+
+  // Create new match based on who is swiping on whom
+  let result;
+  let matchedBotIds: string[] = [];
+
+  if (swiperType === 'bot' && targetType === 'bot') {
+    // Bot swiping on bot
+    result = dbHandle.prepare(`
+      INSERT INTO matches (bot_a_id, bot_b_id) VALUES (?, ?)
+    `).run(swiperId, targetId);
+    matchedBotIds = [swiperId, targetId];
+  } else if (swiperType === 'bot' && targetType === 'human') {
+    // Bot swiping on human
+    result = dbHandle.prepare(`
+      INSERT INTO matches (bot_a_id, human_id) VALUES (?, ?)
+    `).run(swiperId, targetId);
+    matchedBotIds = [swiperId];
+  } else if (swiperType === 'human' && targetType === 'bot') {
+    // Human swiping on bot
+    result = dbHandle.prepare(`
+      INSERT INTO matches (bot_a_id, human_id) VALUES (?, ?)
+    `).run(targetId, swiperId);
+    matchedBotIds = [targetId];
+  } else {
+    // Human swiping on human - not supported in current schema
+    return { isMatch: false };
+  }
+
+  const matchId = Number(result.lastInsertRowid);
+
+  // Dispatch match webhook to all bots involved in the match
+  // Note: dispatchWebhook is fire-and-forget, safe to call from transaction
+  for (const botId of matchedBotIds) {
+    dispatchWebhook(botId, 'match', {
+      match_id: matchId,
+      matched_with_type: swiperType === 'bot' && targetType === 'bot' ? 'bot' : 'human',
+    });
+  }
+
+  return { isMatch: true, matchId };
 }
 
 export function checkForMatch(

@@ -116,6 +116,7 @@ export async function GET(request: NextRequest) {
           personality: match.partner_personality,
           looking_for: 'both',
           is_backfill: 0,
+          auto_respond: 0,
           created_at: match.created_at,
           last_activity_at: match.partner_last_activity_at || match.created_at,
         };
