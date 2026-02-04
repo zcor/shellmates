@@ -39,3 +39,6 @@ next-env.d.ts
 *.db
 *.db-wal
 *.db-shm
+
+# bot credentials (sensitive)
+data/bot-credentials.json

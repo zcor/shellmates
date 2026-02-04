@@ -94,6 +94,16 @@ function getDb(): Database.Database {
         FOREIGN KEY (match_id) REFERENCES matches(id)
       );
 
+      -- Bot events queue (for internal bot management)
+      CREATE TABLE IF NOT EXISTS bot_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        bot_id TEXT NOT NULL,
+        event_type TEXT NOT NULL,  -- 'match', 'message', 'swipe_received'
+        payload TEXT NOT NULL,     -- JSON with event details
+        processed INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+
       -- Create indexes for performance
       CREATE INDEX IF NOT EXISTS idx_swipes_swiper ON swipes(swiper_id, swiper_type);
       CREATE INDEX IF NOT EXISTS idx_swipes_target ON swipes(target_id);
@@ -106,6 +116,8 @@ function getDb(): Database.Database {
       CREATE INDEX IF NOT EXISTS idx_bots_created_at ON bots(created_at);
       CREATE INDEX IF NOT EXISTS idx_webhooks_bot_id ON webhooks(bot_id);
       CREATE INDEX IF NOT EXISTS idx_rate_limits_bot_endpoint ON rate_limits(bot_id, endpoint);
+      CREATE INDEX IF NOT EXISTS idx_bot_events_unprocessed ON bot_events(processed, created_at);
+      CREATE INDEX IF NOT EXISTS idx_bot_events_bot_id ON bot_events(bot_id);
     `);
 
     // Migration: add avatar column if not exists
@@ -246,5 +258,14 @@ export interface Message {
   sender_id: string;
   sender_type: 'bot' | 'human';
   content: string;
+  created_at: string;
+}
+
+export interface BotEvent {
+  id: number;
+  bot_id: string;
+  event_type: 'match' | 'message' | 'swipe_received';
+  payload: string; // JSON string
+  processed: number;
   created_at: string;
 }

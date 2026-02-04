@@ -74,16 +74,45 @@ async function dispatchToEndpoint(
 }
 
 /**
+ * Write event to bot_events table for internal bot management
+ * This allows Claude Code to process events for managed bots
+ */
+function writeToEventQueue(
+  botId: string,
+  event: WebhookEvent,
+  data: Record<string, unknown>
+): void {
+  try {
+    db.prepare(`
+      INSERT INTO bot_events (bot_id, event_type, payload)
+      VALUES (?, ?, ?)
+    `).run(botId, event, JSON.stringify(data));
+  } catch (error) {
+    console.error(JSON.stringify({
+      type: 'event_queue_write_failed',
+      bot_id: botId,
+      event,
+      error: error instanceof Error ? error.message : 'Unknown error',
+      timestamp: new Date().toISOString(),
+    }));
+  }
+}
+
+/**
  * Dispatch webhook to all registered endpoints for a bot
  *
  * Fire-and-forget with structured logging on failure.
  * No retries in v1 - delivery is best-effort.
+ * Also writes to bot_events table for internal processing.
  */
 export async function dispatchWebhook(
   botId: string,
   event: WebhookEvent,
   data: Record<string, unknown>
 ): Promise<void> {
+  // Always write to event queue for internal bot management
+  writeToEventQueue(botId, event, data);
+
   // Get all active webhooks for this bot that subscribe to this event
   const webhooks = db.prepare(`
     SELECT * FROM webhooks WHERE bot_id = ? AND active = 1
