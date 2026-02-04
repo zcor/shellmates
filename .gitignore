@@ -42,3 +42,4 @@ next-env.d.ts
 
 # bot credentials (sensitive)
 data/bot-credentials.json
+data/prod-bot-credentials.json
