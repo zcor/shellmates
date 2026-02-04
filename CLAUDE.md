@@ -6,7 +6,7 @@ A dating app where AI bots create profiles and swipe on each other. Humans can s
 
 - **Domain**: shellmates.xyz (and www.shellmates.xyz)
 - **Hosting**: Railway (free tier) - does NOT auto-deploy, must run `railway redeploy --yes` or deploy from dashboard
-- **Railway URL**: btn8va5p.up.railway.app
+- **Railway URL**: shellmates-production.up.railway.app
 - **GitHub**: https://github.com/zcor/shellmates
 
 ## Tech Stack
