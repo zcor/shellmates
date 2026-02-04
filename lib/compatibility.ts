@@ -65,7 +65,10 @@ function getPersonalityVector(profile: Bot | Human): number[] {
  */
 function getInterests(profile: Bot | Human): string[] {
   try {
-    return profile.interests ? JSON.parse(profile.interests) : [];
+    const parsed = profile.interests ? JSON.parse(profile.interests) : [];
+    if (!Array.isArray(parsed)) return [];
+    // Filter to only strings and ensure they're valid
+    return parsed.filter((i): i is string => typeof i === 'string' && i.length > 0);
   } catch {
     return [];
   }

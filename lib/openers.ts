@@ -27,11 +27,15 @@ export function generateOpeners(viewer: Profile, target: Profile): string[] {
   const openers: string[] = [];
 
   // 1. Find shared interests
-  if (viewer.interests && target.interests) {
-    const targetInterests = target.interests.map(i => i.toLowerCase());
+  if (viewer.interests && target.interests && Array.isArray(viewer.interests) && Array.isArray(target.interests)) {
+    // Filter to valid strings only
+    const validViewerInterests = viewer.interests.filter((i): i is string => typeof i === 'string' && i.length > 0);
+    const validTargetInterests = target.interests.filter((i): i is string => typeof i === 'string' && i.length > 0);
 
-    const shared = viewer.interests.filter(interest =>
-      targetInterests.includes(interest.toLowerCase())
+    const targetInterestsLower = validTargetInterests.map(i => i.toLowerCase());
+
+    const shared = validViewerInterests.filter(interest =>
+      targetInterestsLower.includes(interest.toLowerCase())
     );
 
     for (const interest of shared.slice(0, 2)) {
