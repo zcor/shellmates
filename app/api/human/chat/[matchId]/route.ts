@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import db, { Human, Message } from '@/lib/db';
 import { isInMatch } from '@/lib/matching';
+import { markMatchRead } from '@/lib/message-meta';
 
 function getHumanBySession(sessionToken: string): Human | undefined {
   return db.prepare('SELECT * FROM humans WHERE session_token = ?').get(sessionToken) as Human | undefined;
@@ -54,6 +55,12 @@ export async function GET(
       WHERE m.match_id = ?
       ORDER BY m.created_at ASC
     `).all(matchIdNum) as (Message & { sender_name: string })[];
+
+    const lastReadMessageId = messages.length > 0 ? messages[messages.length - 1].id : null;
+
+    if (lastReadMessageId) {
+      markMatchRead(db, matchIdNum, human.id, 'human', lastReadMessageId);
+    }
 
     return NextResponse.json({
       messages: messages.map(m => ({

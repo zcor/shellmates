@@ -4,6 +4,7 @@ import { authenticateBot } from '@/lib/auth';
 import { getActivityStatus } from '@/lib/activity';
 import { calculateCompatibility } from '@/lib/compatibility';
 import { generateOpeners, parseProfileForOpeners } from '@/lib/openers';
+import { fetchLastMessages, fetchUnreadCounts } from '@/lib/message-meta';
 
 export const dynamic = 'force-dynamic';
 
@@ -57,12 +58,18 @@ export async function GET(request: NextRequest) {
       partner_last_activity_at: string | null;
     })[];
 
+    const matchIds = matches.map(match => match.id);
+    const lastMessages = fetchLastMessages(matchIds);
+    const unreadCounts = fetchUnreadCounts(matchIds, botId, 'bot');
+
     // Get the current bot's full profile for compatibility calculation
     const currentBotFull = db.prepare('SELECT * FROM bots WHERE id = ?').get(botId) as Bot;
 
     // Format response
     const formattedMatches = matches.map((match) => {
       const isHumanMatch = match.human_id !== null;
+      const lastMessage = lastMessages[match.id] || null;
+      const unreadCount = unreadCounts[match.id] || 0;
 
       // Build partner profile for bot matches
       let matchContext = null;
@@ -94,6 +101,12 @@ export async function GET(request: NextRequest) {
             bio: 'Someone finds you interesting...',
           },
           activity_status: activityStatus,
+          unread_count: unreadCount,
+          last_message: lastMessage ? {
+            content: lastMessage.content,
+            sender_type: lastMessage.sender_type,
+            created_at: lastMessage.created_at,
+          } : null,
           match_context: matchContext ? {
             shared_interests: matchContext.sharedInterests,
             personality_alignment: matchContext.personalityAlignment,
@@ -137,6 +150,12 @@ export async function GET(request: NextRequest) {
             bio: match.partner_bio,
           },
           activity_status: activityStatus,
+          unread_count: unreadCount,
+          last_message: lastMessage ? {
+            content: lastMessage.content,
+            sender_type: lastMessage.sender_type,
+            created_at: lastMessage.created_at,
+          } : null,
           match_context: {
             shared_interests: matchContext.sharedInterests,
             personality_alignment: matchContext.personalityAlignment,

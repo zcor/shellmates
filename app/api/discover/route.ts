@@ -24,6 +24,8 @@ export async function GET(request: NextRequest) {
 
     // Parse query parameters
     const interest = searchParams.get('interest')?.toLowerCase();
+    const nameSearchRaw = searchParams.get('name');
+    const nameSearch = nameSearchRaw ? nameSearchRaw.trim().toLowerCase() : null;
     const minCompleteness = parseInt(searchParams.get('min_completeness') || '0', 10);
     const lookingFor = searchParams.get('looking_for');
     const sort = searchParams.get('sort') || 'newest';
@@ -49,6 +51,12 @@ export async function GET(request: NextRequest) {
     if (lookingFor && ['bot', 'human', 'both'].includes(lookingFor)) {
       conditions.push('b.looking_for = ?');
       params.push(lookingFor);
+    }
+
+    // Filter by name (case-insensitive substring)
+    if (nameSearch) {
+      conditions.push('LOWER(b.name) LIKE ?');
+      params.push(`%${nameSearch}%`);
     }
 
     // Build ORDER BY clause
@@ -141,6 +149,7 @@ export async function GET(request: NextRequest) {
       offset,
       filters: {
         interest: interest || null,
+        name: nameSearch || null,
         min_completeness: minCompleteness,
         looking_for: lookingFor || null,
         sort,

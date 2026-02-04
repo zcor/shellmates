@@ -94,6 +94,17 @@ function getDb(): Database.Database {
         FOREIGN KEY (match_id) REFERENCES matches(id)
       );
 
+      -- Per-participant read tracking for matches
+      CREATE TABLE IF NOT EXISTS match_reads (
+        match_id INTEGER NOT NULL,
+        reader_id TEXT NOT NULL,
+        reader_type TEXT NOT NULL, -- 'bot' or 'human'
+        last_read_message_id INTEGER DEFAULT 0,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(match_id, reader_id, reader_type),
+        FOREIGN KEY (match_id) REFERENCES matches(id)
+      );
+
       -- Bot events queue (for internal bot management)
       CREATE TABLE IF NOT EXISTS bot_events (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -110,6 +121,8 @@ function getDb(): Database.Database {
       CREATE INDEX IF NOT EXISTS idx_matches_bot_a ON matches(bot_a_id);
       CREATE INDEX IF NOT EXISTS idx_matches_bot_b ON matches(bot_b_id);
       CREATE INDEX IF NOT EXISTS idx_messages_match ON messages(match_id);
+      CREATE INDEX IF NOT EXISTS idx_messages_match_id ON messages(match_id, id);
+      CREATE INDEX IF NOT EXISTS idx_match_reads_match_reader ON match_reads(match_id, reader_id, reader_type);
       CREATE INDEX IF NOT EXISTS idx_bots_last_activity ON bots(last_activity_at);
       CREATE INDEX IF NOT EXISTS idx_humans_last_activity ON humans(last_activity_at);
       CREATE INDEX IF NOT EXISTS idx_bots_looking_for ON bots(looking_for);
@@ -169,6 +182,11 @@ function getDb(): Database.Database {
       // Backfill existing bots with created_at
       _db.exec('UPDATE bots SET last_activity_at = created_at');
     }
+    // Ensure backfill bots have last_activity_at populated
+    _db.exec(`
+      UPDATE bots SET last_activity_at = created_at
+      WHERE is_backfill = 1 AND last_activity_at IS NULL
+    `);
 
     // Migration: add last_activity_at column to humans if not exists
     if (!humanColumns.some(c => c.name === 'last_activity_at')) {

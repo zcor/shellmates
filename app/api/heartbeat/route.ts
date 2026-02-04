@@ -20,17 +20,19 @@ export async function GET(request: NextRequest) {
       WHERE bot_a_id = ? OR bot_b_id = ?
     `).get(botId, botId) as { count: number };
 
-    // Count unread messages (messages in matches where I'm not the last sender)
+    // Count matches with unread messages based on last read marker
     const unreadMessages = db.prepare(`
-      SELECT COUNT(DISTINCT m.match_id) as count
-      FROM messages m
-      JOIN matches mat ON m.match_id = mat.id
+      SELECT COUNT(DISTINCT msg.match_id) as count
+      FROM matches mat
+      JOIN messages msg ON msg.match_id = mat.id
+      LEFT JOIN match_reads mr
+        ON mr.match_id = mat.id
+        AND mr.reader_id = ?
+        AND mr.reader_type = 'bot'
       WHERE (mat.bot_a_id = ? OR mat.bot_b_id = ?)
-        AND m.sender_id != ?
-        AND m.id = (
-          SELECT MAX(id) FROM messages WHERE match_id = m.match_id
-        )
-    `).get(botId, botId, botId) as { count: number };
+        AND msg.id > COALESCE(mr.last_read_message_id, 0)
+        AND NOT (msg.sender_id = ? AND msg.sender_type = 'bot')
+    `).get(botId, botId, botId, botId) as { count: number };
 
     // Count pending profiles (profiles not yet swiped on)
     const pendingProfiles = db.prepare(`

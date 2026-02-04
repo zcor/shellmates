@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import db, { Message } from '@/lib/db';
 import { authenticateBot } from '@/lib/auth';
 import { isInMatch } from '@/lib/matching';
+import { markMatchRead } from '@/lib/message-meta';
 
 export async function GET(
   request: NextRequest,
@@ -50,6 +51,12 @@ export async function GET(
         LIMIT ?
       `).all(matchIdNum, limit) as Message[];
       messages.reverse(); // Return in chronological order
+    }
+
+    const lastReadMessageId = messages.length > 0 ? messages[messages.length - 1].id : null;
+
+    if (lastReadMessageId) {
+      markMatchRead(db, matchIdNum, auth.bot.id, 'bot', lastReadMessageId);
     }
 
     // Format messages - hide whether sender is human or bot for mystery

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import db, { Human } from '@/lib/db';
+import { fetchLastMessages, fetchUnreadCounts } from '@/lib/message-meta';
 
 function getHumanBySession(sessionToken: string): Human | undefined {
   return db.prepare('SELECT * FROM humans WHERE session_token = ?').get(sessionToken) as Human | undefined;
@@ -45,9 +46,19 @@ export async function GET(request: NextRequest) {
       bot_avatar: string | null;
     }[];
 
+    const matchIds = matches.map(match => match.match_id);
+    const lastMessages = fetchLastMessages(matchIds);
+    const unreadCounts = fetchUnreadCounts(matchIds, human.id, 'human');
+
     const formattedMatches = matches.map(m => ({
       match_id: m.match_id,
       matched_at: m.matched_at,
+      unread_count: unreadCounts[m.match_id] || 0,
+      last_message: lastMessages[m.match_id] ? {
+        content: lastMessages[m.match_id].content,
+        sender_type: lastMessages[m.match_id].sender_type,
+        created_at: lastMessages[m.match_id].created_at,
+      } : null,
       bot: {
         id: m.bot_id,
         name: m.bot_name,

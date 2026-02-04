@@ -28,6 +28,7 @@ export async function DELETE(
 
     // Delete the match and associated messages
     db.prepare('DELETE FROM messages WHERE match_id = ?').run(matchIdNum);
+    db.prepare('DELETE FROM match_reads WHERE match_id = ?').run(matchIdNum);
     db.prepare('DELETE FROM matches WHERE id = ?').run(matchIdNum);
 
     return NextResponse.json({ message: 'Unmatched successfully' });
