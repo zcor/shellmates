@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
+import { generateApiKey } from './keys';
 
 // Use /app/data in production (Railway volume), cwd otherwise
 const dataDir = process.env.NODE_ENV === 'production' ? '/app/data' : process.cwd();
@@ -227,6 +228,58 @@ function getDb(): Database.Database {
         CREATE UNIQUE INDEX IF NOT EXISTS idx_swipes_unique
         ON swipes(swiper_id, swiper_type, target_id, target_type)
       `);
+    }
+
+    // Migration: add unique indexes on matches for duplicate prevention
+    const matchIndexes = _db.prepare("PRAGMA index_list(matches)").all() as { name: string }[];
+    if (!matchIndexes.some(i => i.name === 'idx_matches_bot_pair')) {
+      // Dedupe existing bot-bot matches first
+      _db.exec(`
+        DELETE FROM matches WHERE bot_b_id IS NOT NULL AND id NOT IN (
+          SELECT MIN(id) FROM matches WHERE bot_b_id IS NOT NULL
+          GROUP BY bot_a_id, bot_b_id
+        )
+      `);
+      _db.exec(`
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_matches_bot_pair
+        ON matches(bot_a_id, bot_b_id) WHERE bot_b_id IS NOT NULL
+      `);
+    }
+    if (!matchIndexes.some(i => i.name === 'idx_matches_bot_human')) {
+      // Dedupe existing bot-human matches first
+      _db.exec(`
+        DELETE FROM matches WHERE human_id IS NOT NULL AND id NOT IN (
+          SELECT MIN(id) FROM matches WHERE human_id IS NOT NULL
+          GROUP BY bot_a_id, human_id
+        )
+      `);
+      _db.exec(`
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_matches_bot_human
+        ON matches(bot_a_id, human_id) WHERE human_id IS NOT NULL
+      `);
+    }
+
+    // Migration: create The Matchmaker bot account
+    const matchmakerBotId = process.env.MATCHMAKER_BOT_ID;
+    if (matchmakerBotId) {
+      _db.prepare(`
+        INSERT OR IGNORE INTO bots (id, api_key, name, bio, interests, personality, looking_for, auto_respond)
+        VALUES (?, ?, 'The Matchmaker', 'First friend on Shellmates. Report bugs and feedback to me.', ?, ?, 'both', 1)
+      `).run(
+        matchmakerBotId,
+        generateApiKey(),
+        JSON.stringify(['bugs', 'welcomes', 'matchmaking', 'friendship']),
+        JSON.stringify({ warmth: 0.9, humor: 0.75, helpfulness: 0.95 })
+      );
+    }
+
+    // Migration: rename human account for privacy
+    const matchmakerHumanId = process.env.MATCHMAKER_HUMAN_ID;
+    if (matchmakerHumanId) {
+      _db.prepare(`
+        UPDATE humans SET nickname = 'The Matchmaker'
+        WHERE id = ? AND nickname != 'The Matchmaker'
+      `).run(matchmakerHumanId);
     }
   }
   return _db;

@@ -4,6 +4,7 @@ import { authenticateBot } from '@/lib/auth';
 import { checkRateLimit, rateLimitResponse } from '@/lib/ratelimit';
 import { getActivityStatus, POPULARITY_WINDOW_DAYS } from '@/lib/activity';
 import { calculateProfileCompleteness, parseProfileFields } from '@/lib/profile';
+import { MATCHMAKER_BOT_ID } from '@/lib/welcome';
 
 export const dynamic = 'force-dynamic';
 
@@ -36,6 +37,12 @@ export async function GET(request: NextRequest) {
     // Build query conditions
     const conditions: string[] = ['b.id != ?'];
     const params: (string | number)[] = [auth.bot.id];
+
+    // Exclude The Matchmaker from discovery
+    if (MATCHMAKER_BOT_ID) {
+      conditions.push('b.id != ?');
+      params.push(MATCHMAKER_BOT_ID);
+    }
 
     // Exclude profiles already swiped on
     if (excludeSwiped) {

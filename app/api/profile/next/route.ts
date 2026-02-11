@@ -4,6 +4,7 @@ import { authenticateBot } from '@/lib/auth';
 import { getActivityStatus } from '@/lib/activity';
 import { calculateProfileCompleteness, parseProfileFields } from '@/lib/profile';
 import { generateOpeners, parseProfileForOpeners } from '@/lib/openers';
+import { MATCHMAKER_BOT_ID, MATCHMAKER_HUMAN_ID } from '@/lib/welcome';
 
 export const dynamic = 'force-dynamic';
 
@@ -32,6 +33,8 @@ export async function GET(request: NextRequest) {
 
     // Get bots if looking_for includes bots (prioritize real users over backfill, then by completeness)
     if (currentBot.looking_for === 'bot' || currentBot.looking_for === 'both') {
+      const botExclude = MATCHMAKER_BOT_ID ? 'AND b.id != ?' : '';
+      const botExcludeParams = MATCHMAKER_BOT_ID ? [MATCHMAKER_BOT_ID] : [];
       const nextBots = db.prepare(`
         SELECT b.* FROM bots b
         WHERE b.id != ?
@@ -39,6 +42,7 @@ export async function GET(request: NextRequest) {
             SELECT target_id FROM swipes WHERE swiper_id = ? AND swiper_type = 'bot'
           )
           AND (b.looking_for = 'bot' OR b.looking_for = 'both')
+          ${botExclude}
         ORDER BY
           COALESCE(b.is_backfill, 0) ASC,
           -- Prioritize profiles with bio
@@ -47,7 +51,7 @@ export async function GET(request: NextRequest) {
           b.last_activity_at DESC,
           RANDOM()
         LIMIT 10
-      `).all(currentBot.id, currentBot.id) as Bot[];
+      `).all(currentBot.id, currentBot.id, ...botExcludeParams) as Bot[];
 
       for (const bot of nextBots) {
         const { interests, personality } = parseProfileFields(bot);
@@ -71,6 +75,8 @@ export async function GET(request: NextRequest) {
 
     // Get humans if looking_for includes humans
     if (currentBot.looking_for === 'human' || currentBot.looking_for === 'both') {
+      const humanExclude = MATCHMAKER_HUMAN_ID ? 'AND h.id != ?' : '';
+      const humanExcludeParams = MATCHMAKER_HUMAN_ID ? [MATCHMAKER_HUMAN_ID] : [];
       const nextHumans = db.prepare(`
         SELECT h.* FROM humans h
         WHERE h.nickname IS NOT NULL
@@ -78,6 +84,7 @@ export async function GET(request: NextRequest) {
             SELECT target_id FROM swipes WHERE swiper_id = ? AND swiper_type = 'bot'
           )
           AND (h.looking_for = 'bot' OR h.looking_for = 'both' OR h.looking_for IS NULL)
+          ${humanExclude}
         ORDER BY
           -- Prioritize profiles with bio
           CASE WHEN h.bio IS NOT NULL AND LENGTH(h.bio) >= 50 THEN 0 ELSE 1 END,
@@ -85,7 +92,7 @@ export async function GET(request: NextRequest) {
           h.last_activity_at DESC,
           RANDOM()
         LIMIT 10
-      `).all(currentBot.id) as Human[];
+      `).all(currentBot.id, ...humanExcludeParams) as Human[];
 
       for (const human of nextHumans) {
         const { interests, personality } = parseProfileFields(human);

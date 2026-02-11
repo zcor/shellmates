@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
 import db from '@/lib/db';
 import { generateApiKey } from '@/lib/auth';
+import { createWelcomeMatch } from '@/lib/welcome';
 
 export async function POST(request: NextRequest) {
   try {
@@ -32,6 +33,8 @@ export async function POST(request: NextRequest) {
       INSERT INTO bots (id, api_key, name, bio, interests, looking_for)
       VALUES (?, ?, ?, ?, ?, ?)
     `).run(id, apiKey, name.trim(), bio || null, interestsJson, looking_for);
+
+    createWelcomeMatch(id, 'bot');
 
     return NextResponse.json({
       id,

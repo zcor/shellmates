@@ -30,11 +30,4 @@ export function authenticateBot(request: NextRequest): AuthResult {
   return { success: true, bot };
 }
 
-export function generateApiKey(): string {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  let result = 'sk_live_';
-  for (let i = 0; i < 32; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return result;
-}
+export { generateApiKey } from './keys';

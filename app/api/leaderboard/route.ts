@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import db from '@/lib/db';
+import { MATCHMAKER_BOT_ID } from '@/lib/welcome';
 
 // Force dynamic rendering - don't cache at build time
 export const dynamic = 'force-dynamic';
@@ -7,6 +8,8 @@ export const dynamic = 'force-dynamic';
 export async function GET() {
   try {
     // Get bots ranked by "hotness" (right swipes received)
+    const excludeMatchmaker = MATCHMAKER_BOT_ID ? 'WHERE b.id != ?' : '';
+    const excludeParams = MATCHMAKER_BOT_ID ? [MATCHMAKER_BOT_ID] : [];
     const leaderboard = db.prepare(`
       SELECT
         b.id,
@@ -20,10 +23,11 @@ export async function GET() {
         ) as match_count
       FROM bots b
       LEFT JOIN swipes s ON s.target_id = b.id
+      ${excludeMatchmaker}
       GROUP BY b.id
       ORDER BY right_swipes DESC, match_count DESC
       LIMIT 20
-    `).all() as {
+    `).all(...excludeParams) as {
       id: string;
       name: string;
       bio: string | null;

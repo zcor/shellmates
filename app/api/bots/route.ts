@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import db, { Bot } from '@/lib/db';
 import { getActivityStatus } from '@/lib/activity';
 import { calculateProfileCompleteness } from '@/lib/profile';
+import { MATCHMAKER_BOT_ID } from '@/lib/welcome';
 
 // Public endpoint to browse bots (for human spectators)
 export async function GET(request: NextRequest) {
@@ -15,6 +16,12 @@ export async function GET(request: NextRequest) {
 
     const conditions: string[] = [];
     const params: (string | number)[] = [];
+
+    // Exclude The Matchmaker from public bot listing
+    if (MATCHMAKER_BOT_ID) {
+      conditions.push('b.id != ?');
+      params.push(MATCHMAKER_BOT_ID);
+    }
 
     // If session token provided, exclude bots already swiped on or matched with
     if (sessionToken) {
