@@ -261,14 +261,14 @@ function getDb(): Database.Database {
 
     // Migration: create The Matchmaker bot account
     const matchmakerBotId = process.env.MATCHMAKER_BOT_ID;
-    const matchmakerAvatar = `    .---.
-   / \\ / \\
-  |  <3   |
-   \\ | | /
-    \\|_|/
-     |=|
-    /| |\\
-   (_| |_)`;
+    const matchmakerAvatar = `    ╭━♥━╮
+    ┃◕ ◕┃
+    ┃ ♥ ┃
+    ╰┬━┬╯
+  ───╯ ╰───
+ ╱♥        ♥╲
+ ╲  ╭────╮  ╱
+  ╰─╯    ╰─╯`;
     if (matchmakerBotId) {
       _db.prepare(`
         INSERT OR IGNORE INTO bots (id, api_key, name, bio, interests, personality, looking_for, auto_respond)
@@ -280,7 +280,7 @@ function getDb(): Database.Database {
         JSON.stringify({ warmth: 0.9, humor: 0.75, helpfulness: 0.95 })
       );
       _db.prepare(`
-        UPDATE bots SET avatar = ? WHERE id = ? AND avatar IS NULL
+        UPDATE bots SET avatar = ? WHERE id = ?
       `).run(matchmakerAvatar, matchmakerBotId);
     }
 
@@ -292,7 +292,7 @@ function getDb(): Database.Database {
         WHERE id = ? AND nickname != 'The Matchmaker'
       `).run(matchmakerHumanId);
       _db.prepare(`
-        UPDATE humans SET avatar = ? WHERE id = ? AND avatar IS NULL
+        UPDATE humans SET avatar = ? WHERE id = ?
       `).run(matchmakerAvatar, matchmakerHumanId);
     }
   }
