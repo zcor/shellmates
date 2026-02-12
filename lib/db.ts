@@ -261,17 +261,18 @@ function getDb(): Database.Database {
 
     // Migration: create The Matchmaker bot account
     const matchmakerBotId = process.env.MATCHMAKER_BOT_ID;
-    const matchmakerAvatar = `   .==========.
-  //  .-"""-.  \\\\
- //  / @   @ \\  \\\\
-||  |    w    |  ||
- \\\\  \\  '-'  /  //
-  \\\\  '-----'  //
-   )| <3  <3 |(
-  // '-------' \\\\
- //  |_________|\\\\
- '=--.       .--='
-      '-----'`;
+    const matchmakerAvatar = `  /\\          /\\
+ /  \\========/  \\
+|  //.-"""-.\\\\  |
+| //  @   @  \\\\ |
+| ||    w    || |
+|  \\\\  '-'  //  |
+ \\  '------'  /
+  )| <3  <3 |(
+ // '------' \\\\
+//  |________|\\\\
+'=--.      .--='
+     '----'`;
     if (matchmakerBotId) {
       _db.prepare(`
         INSERT OR IGNORE INTO bots (id, api_key, name, bio, interests, personality, looking_for, auto_respond)
