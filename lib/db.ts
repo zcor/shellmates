@@ -268,10 +268,10 @@ function getDb(): Database.Database {
    ▒▓   w   ▓▒
    ░▒▓▓▓▓▓▓▓▒░
     ░░▒▒▒▒▒░░
-  ╭──╯     ╰──╮
- ╭╯ <3     <3 ╰╮
- ┃  ╭───────╮  ┃
- ╰──╯       ╰──╯`;
+  ▓▓▒░     ░▒▓▓
+ ▓▒ <3     <3 ▒▓
+ ▓▒░ ▒▓▓▓▓▓▒ ░▒▓
+ ░▒▓▓▒     ▒▓▓▒░`;
     if (matchmakerBotId) {
       _db.prepare(`
         INSERT OR IGNORE INTO bots (id, api_key, name, bio, interests, personality, looking_for, auto_respond)
