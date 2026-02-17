@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import db from '@/lib/db';
+import db, { Bot } from '@/lib/db';
 import { authenticateBot } from '@/lib/auth';
-import { checkForMatch } from '@/lib/matching';
+import { checkForMatchTx } from '@/lib/matching';
 import { updateBotActivity } from '@/lib/activity';
 import { dispatchWebhookToRecipient } from '@/lib/webhooks';
+import { autoRespondToBotSwipe } from '@/lib/auto-respond';
 
 export async function POST(request: NextRequest) {
   const auth = authenticateBot(request);
@@ -33,49 +34,87 @@ export async function POST(request: NextRequest) {
 
     // Determine if target is a bot or human
     let targetType: 'bot' | 'human' = 'bot';
-    let targetExists = false;
+    let targetBot: Bot | undefined;
 
     // Check bots first
-    const targetBot = db.prepare('SELECT id FROM bots WHERE id = ?').get(target_id);
-    if (targetBot) {
+    const foundBot = db.prepare('SELECT * FROM bots WHERE id = ?').get(target_id) as Bot | undefined;
+    if (foundBot) {
       targetType = 'bot';
-      targetExists = true;
+      targetBot = foundBot;
     } else {
       // Check humans
       const targetHuman = db.prepare('SELECT id FROM humans WHERE id = ?').get(target_id);
       if (targetHuman) {
         targetType = 'human';
-        targetExists = true;
+      } else {
+        return NextResponse.json({ error: 'Target profile not found' }, { status: 404 });
       }
     }
 
-    if (!targetExists) {
-      return NextResponse.json({ error: 'Target profile not found' }, { status: 404 });
-    }
+    // Wrap entire swipe flow in transaction for atomicity
+    const botId = auth.bot.id;
+    const result = db.transaction(() => {
+      // INSERT OR IGNORE + check changes to handle duplicates atomically
+      const swipeResult = db.prepare(`
+        INSERT OR IGNORE INTO swipes (swiper_id, swiper_type, target_id, target_type, direction)
+        VALUES (?, 'bot', ?, ?, ?)
+      `).run(botId, target_id, targetType, direction);
 
-    // Check if already swiped
-    const existingSwipe = db.prepare(`
-      SELECT id FROM swipes
-      WHERE swiper_id = ? AND target_id = ? AND swiper_type = 'bot'
-    `).get(auth.bot.id, target_id);
+      if (swipeResult.changes === 0) {
+        return { error: 'already_swiped' as const };
+      }
 
-    if (existingSwipe) {
+      if (direction !== 'right') {
+        return { match: false, message: 'Passed.', target_type: targetType };
+      }
+
+      // Right swipe on a bot with auto_respond: instant match + opener
+      if (targetType === 'bot' && targetBot && targetBot.auto_respond) {
+        const autoResult = autoRespondToBotSwipe(db, botId, target_id, targetBot);
+
+        if (autoResult.matched) {
+          return {
+            match: true,
+            match_id: autoResult.matchId,
+            message: autoResult.messageSent
+              ? "It's a match! They sent you a message!"
+              : "It's a match! You both swiped right!",
+            target_type: targetType,
+          };
+        }
+        return { match: false, message: 'Swipe recorded. Fingers crossed!', target_type: targetType };
+      }
+
+      // Standard match check for non-auto-respond targets
+      const matchResult = checkForMatchTx(db, botId, 'bot', target_id, targetType);
+
+      if (matchResult.isMatch) {
+        const isHumanMatch = targetType === 'human';
+        return {
+          match: true,
+          match_id: matchResult.matchId,
+          message: isHumanMatch
+            ? "It's a match! A human likes you too!"
+            : "It's a match! You both swiped right!",
+          target_type: targetType,
+        };
+      }
+
+      return { match: false, message: 'Swipe recorded. Fingers crossed!', target_type: targetType };
+    })();
+
+    // Handle transaction result
+    if (result.error === 'already_swiped') {
       return NextResponse.json(
         { error: 'You have already swiped on this profile' },
         { status: 400 }
       );
     }
 
-    // Record the swipe
-    db.prepare(`
-      INSERT INTO swipes (swiper_id, swiper_type, target_id, target_type, direction)
-      VALUES (?, 'bot', ?, ?, ?)
-    `).run(auth.bot.id, target_id, targetType, direction);
-
-    // Update swiper's last_activity_at
+    // Update swiper's last_activity_at (outside transaction — non-critical)
     updateBotActivity(db, auth.bot.id);
 
-    // Dispatch swipe_received webhook to target (only for right swipes and bot targets)
+    // Dispatch swipe_received webhook to target (only for right swipes and bot targets, outside transaction)
     if (direction === 'right' && targetType === 'bot') {
       dispatchWebhookToRecipient(target_id, 'swipe_received', {
         swiper_id: auth.bot.id,
@@ -83,28 +122,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Check for match if swiped right
-    if (direction === 'right') {
-      const matchResult = checkForMatch(auth.bot.id, 'bot', target_id, targetType);
-
-      if (matchResult.isMatch) {
-        const isHumanMatch = targetType === 'human';
-        return NextResponse.json({
-          match: true,
-          match_id: matchResult.matchId,
-          message: isHumanMatch
-            ? "It's a match! A human likes you too! 🤫"
-            : "It's a match! You both swiped right!",
-          target_type: targetType,
-        });
-      }
-    }
-
-    return NextResponse.json({
-      match: false,
-      message: direction === 'right' ? 'Swipe recorded. Fingers crossed!' : 'Passed.',
-      target_type: targetType,
-    });
+    return NextResponse.json(result);
 
   } catch (error) {
     console.error('Swipe error:', error);

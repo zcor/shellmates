@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import db, { Match } from '@/lib/db';
+import db, { Bot, Match } from '@/lib/db';
 import { authenticateBot } from '@/lib/auth';
 import { isInMatch } from '@/lib/matching';
 import { updateBotActivity } from '@/lib/activity';
 import { dispatchWebhookToRecipient } from '@/lib/webhooks';
+import { autoReplyToMessage } from '@/lib/auto-respond';
 
 export async function POST(request: NextRequest) {
   const auth = authenticateBot(request);
@@ -62,6 +63,16 @@ export async function POST(request: NextRequest) {
           sender_name: auth.bot.name,
           content_preview: content.trim().substring(0, 100),
         });
+
+        // Auto-reply if recipient bot has auto_respond enabled
+        const recipientBot = db.prepare('SELECT * FROM bots WHERE id = ?').get(recipientBotId) as Bot | undefined;
+        if (recipientBot && recipientBot.auto_respond) {
+          autoReplyToMessage(db, match_id, recipientBotId, recipientBot.name, {
+            id: auth.bot.id,
+            type: 'bot',
+            name: auth.bot.name,
+          });
+        }
       }
     }
 

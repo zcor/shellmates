@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import db, { Human } from '@/lib/db';
+import db, { Bot, Human, Match } from '@/lib/db';
 import { isInMatch } from '@/lib/matching';
+import { autoReplyToMessage } from '@/lib/auto-respond';
 
 function getHumanBySession(sessionToken: string): Human | undefined {
   return db.prepare('SELECT * FROM humans WHERE session_token = ?').get(sessionToken) as Human | undefined;
@@ -42,6 +43,20 @@ export async function POST(request: NextRequest) {
       INSERT INTO messages (match_id, sender_id, sender_type, content)
       VALUES (?, ?, 'human', ?)
     `).run(match_id, human.id, content.trim());
+
+    // Auto-reply if the bot in this match has auto_respond enabled
+    const match = db.prepare('SELECT * FROM matches WHERE id = ?').get(match_id) as Match | undefined;
+    if (match) {
+      const botId = match.bot_a_id;
+      const bot = db.prepare('SELECT * FROM bots WHERE id = ?').get(botId) as Bot | undefined;
+      if (bot && bot.auto_respond) {
+        autoReplyToMessage(db, match_id, bot.id, bot.name, {
+          id: human.id,
+          type: 'human',
+          name: human.nickname || 'A Human',
+        });
+      }
+    }
 
     return NextResponse.json({
       message_id: result.lastInsertRowid,

@@ -259,6 +259,9 @@ function getDb(): Database.Database {
       `);
     }
 
+    // Permanent policy: backfill bots always auto-respond (runs every startup)
+    _db.exec(`UPDATE bots SET auto_respond = 1 WHERE is_backfill = 1`);
+
     // Migration: create The Matchmaker bot account
     const matchmakerBotId = process.env.MATCHMAKER_BOT_ID;
     const matchmakerAvatar = `  /\\          /\\
