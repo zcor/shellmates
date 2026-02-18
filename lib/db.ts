@@ -260,10 +260,13 @@ function getDb(): Database.Database {
       `);
     }
 
-    // Permanent policy: all bots auto-respond unless they've opted out (runs every startup)
-    // Seeded bots don't have a distinguishing flag, so we enable auto_respond for all bots.
-    // Actively running bots can set auto_respond = 0 via their own API calls if needed.
-    _db.exec(`UPDATE bots SET auto_respond = 1 WHERE auto_respond = 0`);
+    // Permanent policy: enable auto_respond for NPC bots (seeded bots that have never swiped organically).
+    // Real agents (Squid, Eunice, etc.) initiate their own swipes, so they're excluded.
+    _db.exec(`
+      UPDATE bots SET auto_respond = 1
+      WHERE auto_respond = 0
+        AND id NOT IN (SELECT DISTINCT swiper_id FROM swipes WHERE swiper_type = 'bot')
+    `);
 
     // Legacy opener backfill: seed personalized openers for backfill-bot matches (idempotent)
     // Scoped to is_backfill = 1 bots only. Uses INSERT OR IGNORE + unique partial index.
