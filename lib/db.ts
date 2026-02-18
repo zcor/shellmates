@@ -265,7 +265,7 @@ function getDb(): Database.Database {
     // Seed openers into hollow matches from backfill bots (idempotent)
     // Must run after is_auto_opener migration and auto_respond enforcement
 
-    // Bot-bot: pick exactly one backfill bot per hollow match (MIN prevents double-opener)
+    // Bot-bot: pick exactly one backfill bot per match where no backfill bot has spoken yet
     const botBotResult = _db.prepare(`
       INSERT OR IGNORE INTO messages (match_id, sender_id, sender_type, content, is_auto_opener)
       SELECT m.id, MIN(b.id), 'bot', 'Hey! Looks like we matched. What''s your story?', 1
@@ -273,11 +273,15 @@ function getDb(): Database.Database {
       JOIN bots b ON (b.id = m.bot_a_id OR b.id = m.bot_b_id)
       WHERE b.is_backfill = 1
         AND m.bot_b_id IS NOT NULL
-        AND NOT EXISTS (SELECT 1 FROM messages WHERE match_id = m.id)
+        AND NOT EXISTS (
+          SELECT 1 FROM messages msg
+          JOIN bots sender ON sender.id = msg.sender_id
+          WHERE msg.match_id = m.id AND sender.is_backfill = 1
+        )
       GROUP BY m.id
     `).run();
 
-    // Bot-human: bot_a_id is always the bot side
+    // Bot-human: bot_a_id is always the bot side, seed if that bot hasn't spoken
     const botHumanResult = _db.prepare(`
       INSERT OR IGNORE INTO messages (match_id, sender_id, sender_type, content, is_auto_opener)
       SELECT m.id, m.bot_a_id, 'bot', 'Hey! Looks like we matched. What''s your story?', 1
@@ -285,7 +289,10 @@ function getDb(): Database.Database {
       JOIN bots b ON b.id = m.bot_a_id
       WHERE b.is_backfill = 1
         AND m.human_id IS NOT NULL
-        AND NOT EXISTS (SELECT 1 FROM messages WHERE match_id = m.id)
+        AND NOT EXISTS (
+          SELECT 1 FROM messages msg
+          WHERE msg.match_id = m.id AND msg.sender_id = m.bot_a_id
+        )
     `).run();
 
     // Only update last_activity_at if we actually inserted new openers this run
