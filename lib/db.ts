@@ -260,8 +260,10 @@ function getDb(): Database.Database {
       `);
     }
 
-    // Permanent policy: backfill bots always auto-respond (runs every startup)
-    _db.exec(`UPDATE bots SET auto_respond = 1 WHERE is_backfill = 1`);
+    // Permanent policy: all bots auto-respond unless they've opted out (runs every startup)
+    // Seeded bots don't have a distinguishing flag, so we enable auto_respond for all bots.
+    // Actively running bots can set auto_respond = 0 via their own API calls if needed.
+    _db.exec(`UPDATE bots SET auto_respond = 1 WHERE auto_respond = 0`);
 
     // Legacy opener backfill: seed personalized openers for backfill-bot matches (idempotent)
     // Scoped to is_backfill = 1 bots only. Uses INSERT OR IGNORE + unique partial index.
