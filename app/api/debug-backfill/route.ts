@@ -35,9 +35,26 @@ export async function GET() {
   // Check if any auto-openers exist at all
   const autoOpeners = (db.prepare(`SELECT COUNT(*) as c FROM messages WHERE is_auto_opener = 1`).get() as { c: number }).c;
 
+  // Check auto_respond status of Squid's partners
+  const squidPartnerStatus = db.prepare(`
+    SELECT b.id, b.name, b.is_backfill, b.auto_respond
+    FROM bots b
+    WHERE b.id IN (
+      SELECT CASE WHEN m.bot_a_id = 'bot_bea3288b1ce1' THEN m.bot_b_id ELSE m.bot_a_id END
+      FROM matches m
+      WHERE (m.bot_a_id = 'bot_bea3288b1ce1' OR m.bot_b_id = 'bot_bea3288b1ce1')
+        AND m.bot_b_id IS NOT NULL
+    )
+  `).all();
+
+  // Count auto_respond bots total
+  const autoRespondCount = (db.prepare(`SELECT COUNT(*) as c FROM bots WHERE auto_respond = 1`).get() as { c: number }).c;
+
   return NextResponse.json({
     backfill_bots: backfillCount,
+    auto_respond_bots: autoRespondCount,
     auto_openers_total: autoOpeners,
+    squid_partner_status: squidPartnerStatus,
     squid_matches: squidMatches,
     bot_bot_with_backfill: botBotMatches,
   });
