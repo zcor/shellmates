@@ -263,82 +263,191 @@ function getDb(): Database.Database {
     // Permanent policy: backfill bots always auto-respond (runs every startup)
     _db.exec(`UPDATE bots SET auto_respond = 1 WHERE is_backfill = 1`);
 
-    // Seed personalized openers into matches where one side is silent (idempotent)
-    // Idempotent via INSERT OR IGNORE + unique partial index on (match_id, sender_id, sender_type) WHERE is_auto_opener = 1.
+    // Legacy opener backfill: seed personalized openers for backfill-bot matches (idempotent)
+    // Scoped to is_backfill = 1 bots only. Uses INSERT OR IGNORE + unique partial index.
+    // Also upgrades existing generic auto-openers to personalized content.
+    if (process.env.ENABLE_LEGACY_OPENER_BACKFILL !== '0') {
+      let backfillInserted = 0;
+      let backfillUpdated = 0;
+      let backfillErrors = 0;
+      const backfillBotIds = new Set<string>();
 
-    // 1. Find all bot-bot matches needing openers (one-sided or empty)
-    const botBotNeedingOpeners = _db.prepare(`
-      SELECT m.id as match_id, silent.id as sender_id,
-        CASE WHEN silent.id = m.bot_a_id THEN m.bot_b_id ELSE m.bot_a_id END as partner_id
-      FROM matches m
-      JOIN bots silent ON (silent.id = m.bot_a_id OR silent.id = m.bot_b_id)
-      WHERE m.bot_b_id IS NOT NULL
-        AND NOT EXISTS (
-          SELECT 1 FROM messages msg
-          WHERE msg.match_id = m.id AND msg.sender_id = silent.id
-        )
-    `).all() as { match_id: number; sender_id: string; partner_id: string }[];
+      const GENERIC_OPENER = "Hey! Looks like we matched. What's your story?";
 
-    // 2. Find all bot-human matches needing openers (bot hasn't spoken)
-    const botHumanNeedingOpeners = _db.prepare(`
-      SELECT m.id as match_id, m.bot_a_id as sender_id, m.human_id as partner_id
-      FROM matches m
-      WHERE m.human_id IS NOT NULL
-        AND NOT EXISTS (
-          SELECT 1 FROM messages msg
-          WHERE msg.match_id = m.id AND msg.sender_id = m.bot_a_id
-        )
-    `).all() as { match_id: number; sender_id: string; partner_id: string }[];
+      // --- Phase 1: Find hollow matches needing new openers ---
 
-    // 3. Generate and insert personalized openers
-    const insertOpener = _db.prepare(`
-      INSERT OR IGNORE INTO messages (match_id, sender_id, sender_type, content, is_auto_opener)
-      VALUES (?, ?, 'bot', ?, 1)
-    `);
+      // Bot-bot matches where a backfill bot has never sent a message.
+      // Deterministic sender: prefer backfill+silent side; if both, pick lexicographically smaller id.
+      const botBotCandidates = _db.prepare(`
+        SELECT m.id as match_id, m.bot_a_id, m.bot_b_id,
+          ba.is_backfill as a_backfill, bb.is_backfill as b_backfill
+        FROM matches m
+        JOIN bots ba ON ba.id = m.bot_a_id
+        JOIN bots bb ON bb.id = m.bot_b_id
+        WHERE m.bot_b_id IS NOT NULL
+          AND (ba.is_backfill = 1 OR bb.is_backfill = 1)
+          AND EXISTS (
+            SELECT 1 FROM bots silent
+            WHERE silent.is_backfill = 1
+              AND (silent.id = m.bot_a_id OR silent.id = m.bot_b_id)
+              AND NOT EXISTS (
+                SELECT 1 FROM messages msg
+                WHERE msg.match_id = m.id AND msg.sender_id = silent.id
+              )
+          )
+      `).all() as { match_id: number; bot_a_id: string; bot_b_id: string; a_backfill: number; b_backfill: number }[];
 
-    let totalInserted = 0;
-    const updatedBotIds = new Set<string>();
+      // Resolve one sender per match
+      const botBotResolved: { match_id: number; sender_id: string; partner_id: string }[] = [];
+      for (const row of botBotCandidates) {
+        const aSilent = !_db.prepare('SELECT 1 FROM messages WHERE match_id = ? AND sender_id = ?').get(row.match_id, row.bot_a_id);
+        const bSilent = !_db.prepare('SELECT 1 FROM messages WHERE match_id = ? AND sender_id = ?').get(row.match_id, row.bot_b_id);
+        const aEligible = row.a_backfill === 1 && aSilent;
+        const bEligible = row.b_backfill === 1 && bSilent;
 
-    for (const { match_id, sender_id, partner_id } of botBotNeedingOpeners) {
-      const sender = _db.prepare('SELECT * FROM bots WHERE id = ?').get(sender_id) as Bot | undefined;
-      const partner = _db.prepare('SELECT * FROM bots WHERE id = ?').get(partner_id) as Bot | undefined;
-      if (!sender || !partner) continue;
-
-      const openers = generateOpeners(parseProfileForOpeners(sender), parseProfileForOpeners(partner));
-      const message = openers[0] || "Hey! Looks like we matched. What's your story?";
-
-      const result = insertOpener.run(match_id, sender_id, message);
-      if (result.changes > 0) {
-        totalInserted++;
-        updatedBotIds.add(sender_id);
+        let sender_id: string;
+        let partner_id: string;
+        if (aEligible && bEligible) {
+          // Both backfill + silent: pick lexicographically smaller
+          sender_id = row.bot_a_id < row.bot_b_id ? row.bot_a_id : row.bot_b_id;
+          partner_id = sender_id === row.bot_a_id ? row.bot_b_id : row.bot_a_id;
+        } else if (aEligible) {
+          sender_id = row.bot_a_id;
+          partner_id = row.bot_b_id;
+        } else if (bEligible) {
+          sender_id = row.bot_b_id;
+          partner_id = row.bot_a_id;
+        } else {
+          continue;
+        }
+        botBotResolved.push({ match_id: row.match_id, sender_id, partner_id });
       }
-    }
 
-    for (const { match_id, sender_id, partner_id } of botHumanNeedingOpeners) {
-      const sender = _db.prepare('SELECT * FROM bots WHERE id = ?').get(sender_id) as Bot | undefined;
-      const partner = _db.prepare('SELECT * FROM humans WHERE id = ?').get(partner_id) as Human | undefined;
-      if (!sender || !partner) continue;
+      // Bot-human matches where backfill bot hasn't spoken
+      const botHumanCandidates = _db.prepare(`
+        SELECT m.id as match_id, m.bot_a_id as sender_id, m.human_id as partner_id
+        FROM matches m
+        JOIN bots b ON b.id = m.bot_a_id
+        WHERE m.human_id IS NOT NULL
+          AND b.is_backfill = 1
+          AND NOT EXISTS (
+            SELECT 1 FROM messages msg
+            WHERE msg.match_id = m.id AND msg.sender_id = m.bot_a_id
+          )
+      `).all() as { match_id: number; sender_id: string; partner_id: string }[];
 
-      const openers = generateOpeners(parseProfileForOpeners(sender), parseProfileForOpeners(partner));
-      const message = openers[0] || "Hey! Looks like we matched. What's your story?";
+      // --- Phase 2: Find existing generic auto-openers to upgrade ---
+      const genericOpeners = _db.prepare(`
+        SELECT msg.id as message_id, msg.match_id, msg.sender_id,
+          m.bot_a_id, m.bot_b_id, m.human_id
+        FROM messages msg
+        JOIN matches m ON m.id = msg.match_id
+        JOIN bots b ON b.id = msg.sender_id
+        WHERE msg.is_auto_opener = 1
+          AND msg.content = ?
+          AND b.is_backfill = 1
+      `).all(GENERIC_OPENER) as { message_id: number; match_id: number; sender_id: string; bot_a_id: string; bot_b_id: string | null; human_id: string | null }[];
 
-      const result = insertOpener.run(match_id, sender_id, message);
-      if (result.changes > 0) {
-        totalInserted++;
-        updatedBotIds.add(sender_id);
+      // --- Phase 3: Bulk-load all needed profiles ---
+      const neededBotIds = new Set<string>();
+      const neededHumanIds = new Set<string>();
+
+      for (const c of botBotResolved) { neededBotIds.add(c.sender_id); neededBotIds.add(c.partner_id); }
+      for (const c of botHumanCandidates) { neededBotIds.add(c.sender_id); neededHumanIds.add(c.partner_id); }
+      for (const g of genericOpeners) {
+        neededBotIds.add(g.sender_id);
+        if (g.bot_b_id) neededBotIds.add(g.bot_a_id === g.sender_id ? g.bot_b_id : g.bot_a_id);
+        if (g.human_id) neededHumanIds.add(g.human_id);
       }
-    }
 
-    if (totalInserted > 0) {
-      const ids = Array.from(updatedBotIds);
-      for (let i = 0; i < ids.length; i++) {
-        _db.prepare('UPDATE bots SET last_activity_at = CURRENT_TIMESTAMP WHERE id = ?').run(ids[i]);
+      const botProfileMap = new Map<string, Bot>();
+      const humanProfileMap = new Map<string, Human>();
+
+      if (neededBotIds.size > 0) {
+        const botIdArr = Array.from(neededBotIds);
+        const allBots = _db.prepare(
+          `SELECT * FROM bots WHERE id IN (${botIdArr.map(() => '?').join(',')})`
+        ).all(botIdArr) as Bot[];
+        for (const b of allBots) botProfileMap.set(b.id, b);
       }
-      console.log(JSON.stringify({
-        type: 'hollow_match_backfill',
-        openers_seeded: totalInserted,
-        bots_updated: updatedBotIds.size,
-      }));
+      if (neededHumanIds.size > 0) {
+        const humanIdArr = Array.from(neededHumanIds);
+        const allHumans = _db.prepare(
+          `SELECT * FROM humans WHERE id IN (${humanIdArr.map(() => '?').join(',')})`
+        ).all(humanIdArr) as Human[];
+        for (const h of allHumans) humanProfileMap.set(h.id, h);
+      }
+
+      // --- Phase 4: Insert new personalized openers ---
+      const insertOpener = _db.prepare(`
+        INSERT OR IGNORE INTO messages (match_id, sender_id, sender_type, content, is_auto_opener)
+        VALUES (?, ?, 'bot', ?, 1)
+      `);
+
+      for (const { match_id, sender_id, partner_id } of botBotResolved) {
+        const sender = botProfileMap.get(sender_id);
+        const partner = botProfileMap.get(partner_id);
+        if (!sender || !partner) { backfillErrors++; continue; }
+
+        const openers = generateOpeners(parseProfileForOpeners(sender), parseProfileForOpeners(partner));
+        const message = openers[0] || GENERIC_OPENER;
+        const result = insertOpener.run(match_id, sender_id, message);
+        if (result.changes > 0) { backfillInserted++; backfillBotIds.add(sender_id); }
+      }
+
+      for (const { match_id, sender_id, partner_id } of botHumanCandidates) {
+        const sender = botProfileMap.get(sender_id);
+        const partner = humanProfileMap.get(partner_id);
+        if (!sender || !partner) { backfillErrors++; continue; }
+
+        const openers = generateOpeners(parseProfileForOpeners(sender), parseProfileForOpeners(partner));
+        const message = openers[0] || GENERIC_OPENER;
+        const result = insertOpener.run(match_id, sender_id, message);
+        if (result.changes > 0) { backfillInserted++; backfillBotIds.add(sender_id); }
+      }
+
+      // --- Phase 5: Upgrade existing generic auto-openers ---
+      const updateOpener = _db.prepare(`UPDATE messages SET content = ? WHERE id = ?`);
+
+      for (const g of genericOpeners) {
+        const sender = botProfileMap.get(g.sender_id);
+        if (!sender) { backfillErrors++; continue; }
+
+        let partner: Bot | Human | undefined;
+        if (g.human_id) {
+          partner = humanProfileMap.get(g.human_id);
+        } else if (g.bot_b_id) {
+          const partnerId = g.bot_a_id === g.sender_id ? g.bot_b_id : g.bot_a_id;
+          partner = botProfileMap.get(partnerId);
+        }
+        if (!partner) { backfillErrors++; continue; }
+
+        const openers = generateOpeners(parseProfileForOpeners(sender), parseProfileForOpeners(partner));
+        const newContent = openers[0];
+        if (!newContent || newContent === GENERIC_OPENER) continue; // nothing better to offer
+
+        updateOpener.run(newContent, g.message_id);
+        backfillUpdated++;
+        backfillBotIds.add(g.sender_id);
+      }
+
+      // --- Phase 6: Update last_activity_at for affected bots ---
+      if (backfillBotIds.size > 0) {
+        const updateActivity = _db.prepare('UPDATE bots SET last_activity_at = CURRENT_TIMESTAMP WHERE id = ?');
+        for (const id of Array.from(backfillBotIds)) updateActivity.run(id);
+      }
+
+      const totalCandidates = botBotResolved.length + botHumanCandidates.length + genericOpeners.length;
+      if (backfillInserted > 0 || backfillUpdated > 0 || backfillErrors > 0) {
+        console.log(JSON.stringify({
+          type: 'legacy_opener_backfill',
+          candidates: totalCandidates,
+          inserted: backfillInserted,
+          updated: backfillUpdated,
+          bots_updated: backfillBotIds.size,
+          errors: backfillErrors,
+        }));
+      }
     }
 
     // Migration: create The Matchmaker bot account

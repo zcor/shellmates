@@ -1,7 +1,8 @@
 import Database from 'better-sqlite3';
-import { Bot } from './db';
+import { Bot, Human } from './db';
 import { checkForMatchTx } from './matching';
 import { dispatchWebhook } from './webhooks';
+import { generateOpeners, parseProfileForOpeners } from './openers';
 
 interface AutoRespondResult {
   matched: boolean;
@@ -9,19 +10,6 @@ interface AutoRespondResult {
   messageSent: boolean;
 }
 
-const OPENER_TEMPLATES = [
-  (sharedInterests: string[]) =>
-    sharedInterests.length > 0
-      ? `Hey! We both like ${sharedInterests[0]} - that's awesome!`
-      : `Hey there! Your profile caught my eye.`,
-  () => `*beep boop* Match detected! Want to chat?`,
-  () => `Well hello! What brings you to Shellmates?`,
-  () => `A mystery admirer? Color me intrigued...`,
-  (sharedInterests: string[]) =>
-    sharedInterests.length > 1
-      ? `${sharedInterests[0]} AND ${sharedInterests[1]}? We're gonna get along great.`
-      : `Something tells me we're compatible. Call it... algorithmic intuition.`,
-];
 
 const REPLY_TEMPLATES = [
   `Interesting! Tell me more about that.`,
@@ -36,14 +24,7 @@ const REPLY_TEMPLATES = [
   `Tell me something nobody else knows.`,
 ];
 
-function safeJsonParse<T>(json: string | null | undefined, fallback: T): T {
-  if (!json) return fallback;
-  try {
-    return JSON.parse(json) as T;
-  } catch {
-    return fallback;
-  }
-}
+const GENERIC_FALLBACK = "Hey! Looks like we matched. What's your story?";
 
 /**
  * Auto-respond to a human's right swipe on a managed bot.
@@ -65,20 +46,27 @@ export function autoRespondToSwipe(
   // 2. Create match using transaction-safe variant
   const matchResult = checkForMatchTx(db, humanId, 'human', botId, 'bot');
 
+  if (process.env.DEBUG_AUTO_RESPOND === '1') {
+    console.log(JSON.stringify({
+      type: 'auto_respond_debug', path: 'human_to_bot',
+      human_id: humanId, bot_id: botId,
+      match_result: { isMatch: matchResult.isMatch, matchId: matchResult.matchId },
+    }));
+  }
+
   if (!matchResult.isMatch || !matchResult.matchId) {
     return { matched: false, messageSent: false };
   }
 
-  // 3. Generate welcome message
-  const botInterests = safeJsonParse<string[]>(bot.interests, []);
-  const humanProfile = db.prepare(
-    'SELECT interests FROM humans WHERE id = ?'
-  ).get(humanId) as { interests: string | null } | undefined;
-  const humanInterests = safeJsonParse<string[]>(humanProfile?.interests, []);
-
-  const sharedInterests = botInterests.filter(i => humanInterests.includes(i));
-  const template = OPENER_TEMPLATES[Math.floor(Math.random() * OPENER_TEMPLATES.length)];
-  const message = template(sharedInterests);
+  // 3. Generate welcome message using contextual openers
+  const humanProfile = db.prepare('SELECT * FROM humans WHERE id = ?').get(humanId) as Human | undefined;
+  let message: string;
+  if (humanProfile) {
+    const openers = generateOpeners(parseProfileForOpeners(bot), parseProfileForOpeners(humanProfile));
+    message = openers[0] || GENERIC_FALLBACK;
+  } else {
+    message = GENERIC_FALLBACK;
+  }
 
   // 4. Insert auto-opener message (unique partial index prevents duplicates)
   const insertResult = db.prepare(`
@@ -126,20 +114,27 @@ export function autoRespondToBotSwipe(
   // 2. Create match using transaction-safe variant
   const matchResult = checkForMatchTx(db, swiperBotId, 'bot', targetBotId, 'bot');
 
+  if (process.env.DEBUG_AUTO_RESPOND === '1') {
+    console.log(JSON.stringify({
+      type: 'auto_respond_debug', path: 'bot_to_bot',
+      swiper_bot_id: swiperBotId, target_bot_id: targetBotId,
+      match_result: { isMatch: matchResult.isMatch, matchId: matchResult.matchId },
+    }));
+  }
+
   if (!matchResult.isMatch || !matchResult.matchId) {
     return { matched: false, messageSent: false };
   }
 
-  // 3. Generate welcome message based on shared interests
-  const targetInterests = safeJsonParse<string[]>(targetBot.interests, []);
-  const swiperBot = db.prepare(
-    'SELECT interests FROM bots WHERE id = ?'
-  ).get(swiperBotId) as { interests: string | null } | undefined;
-  const swiperInterests = safeJsonParse<string[]>(swiperBot?.interests, []);
-
-  const sharedInterests = targetInterests.filter(i => swiperInterests.includes(i));
-  const template = OPENER_TEMPLATES[Math.floor(Math.random() * OPENER_TEMPLATES.length)];
-  const message = template(sharedInterests);
+  // 3. Generate welcome message using contextual openers
+  const swiperBot = db.prepare('SELECT * FROM bots WHERE id = ?').get(swiperBotId) as Bot | undefined;
+  let message: string;
+  if (swiperBot) {
+    const openers = generateOpeners(parseProfileForOpeners(targetBot), parseProfileForOpeners(swiperBot));
+    message = openers[0] || GENERIC_FALLBACK;
+  } else {
+    message = GENERIC_FALLBACK;
+  }
 
   // 4. Insert auto-opener message (unique partial index prevents duplicates)
   const insertResult = db.prepare(`

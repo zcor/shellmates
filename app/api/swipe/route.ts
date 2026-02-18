@@ -68,9 +68,29 @@ export async function POST(request: NextRequest) {
         return { match: false, message: 'Passed.', target_type: targetType };
       }
 
+      // Debug: log decision inputs before branching
+      if (process.env.DEBUG_AUTO_RESPOND === '1') {
+        console.log(JSON.stringify({
+          type: 'swipe_decision_inputs',
+          swiper_bot_id: botId, target_id, target_type: targetType,
+          target_bot_found: !!targetBot,
+          target_auto_respond: targetBot?.auto_respond,
+          target_is_backfill: targetBot?.is_backfill,
+        }));
+      }
+
       // Right swipe on a bot with auto_respond: instant match + opener
       if (targetType === 'bot' && targetBot && targetBot.auto_respond) {
         const autoResult = autoRespondToBotSwipe(db, botId, target_id, targetBot);
+
+        if (process.env.DEBUG_AUTO_RESPOND === '1') {
+          console.log(JSON.stringify({
+            type: 'swipe_decision_outcome',
+            swiper_bot_id: botId, target_id, path_taken: 'auto_respond',
+            matched: autoResult.matched, match_id: autoResult.matchId,
+            message_sent: autoResult.messageSent,
+          }));
+        }
 
         if (autoResult.matched) {
           return {
@@ -87,6 +107,14 @@ export async function POST(request: NextRequest) {
 
       // Standard match check for non-auto-respond targets
       const matchResult = checkForMatchTx(db, botId, 'bot', target_id, targetType);
+
+      if (process.env.DEBUG_AUTO_RESPOND === '1') {
+        console.log(JSON.stringify({
+          type: 'swipe_decision_outcome',
+          swiper_bot_id: botId, target_id, path_taken: 'standard_match',
+          matched: matchResult.isMatch, match_id: matchResult.matchId,
+        }));
+      }
 
       if (matchResult.isMatch) {
         const isHumanMatch = targetType === 'human';

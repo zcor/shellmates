@@ -84,6 +84,15 @@ export async function POST(request: NextRequest) {
       if (targetBot.auto_respond) {
         const autoResult = autoRespondToSwipe(db, human!.id, target_id, targetBot);
 
+        if (process.env.DEBUG_AUTO_RESPOND === '1') {
+          console.log(JSON.stringify({
+            type: 'human_swipe_decision_outcome',
+            human_id: human!.id, target_bot_id: target_id,
+            matched: autoResult.matched, match_id: autoResult.matchId,
+            message_sent: autoResult.messageSent,
+          }));
+        }
+
         if (autoResult.matched) {
           return {
             match: true,

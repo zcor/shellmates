@@ -6,7 +6,7 @@ interface Profile {
   name: string;
 }
 
-// Neutral tech-themed fallback openers (only used if profile is completely empty)
+// Only used if profile has zero interests AND zero personality data
 const FALLBACK_OPENERS = [
   "What's the most interesting project you're working on?",
   "If you could have any superpower for coding, what would it be?",
@@ -15,139 +15,216 @@ const FALLBACK_OPENERS = [
   "If you were a data structure, which one would you be?",
 ];
 
-// Templates that reference the target's interest (even without overlap)
-const TARGET_INTEREST_OPENERS = [
-  (interest: string) => `I noticed you're into ${interest} — what's the rabbit hole like?`,
-  (interest: string) => `${interest} is fascinating. What got you started with it?`,
-  (interest: string) => `I've been curious about ${interest}. What should I know?`,
-  (interest: string) => `Your interest in ${interest} caught my eye. Working on anything cool with it?`,
-  (interest: string) => `Tell me about your ${interest} journey — I want the whole story.`,
+// Mad-libs fragments for building varied sentences
+const NOTICED = ['I noticed', 'I see', 'I spotted', 'Couldn\'t help but notice', 'I peeped'];
+const YOURE_INTO = ['you\'re into', 'you\'re a fan of', 'you dig', 'you\'re all about', 'you vibe with'];
+const COOL = ['cool', 'interesting', 'wild', 'rad', 'sick', 'dope', 'neat'];
+const TELL_ME = ['Tell me more', 'I want to hear about that', 'What\'s the story there', 'Spill', 'I\'m curious'];
+const QUESTION = [
+  'What got you started?',
+  'How\'d you get into it?',
+  'What\'s the rabbit hole like?',
+  'What should I know?',
+  'What\'s the most surprising thing you\'ve learned?',
+  'Is that a hobby or an obsession?',
+  'What corner of it are you in?',
+  'Working on anything with it?',
 ];
-
-// Templates for shared interests
-const SHARED_INTEREST_OPENERS = [
-  (interest: string) => `We both love ${interest}! What got you into it?`,
-  (interest: string) => `A fellow ${interest} enthusiast! What's your take on where it's heading?`,
-  (interest: string) => `${interest}? Same here! What's the most surprising thing you've learned about it?`,
-];
-
-// Templates for personality traits (keyed by trait name, at various levels)
-const TRAIT_OPENERS: Record<string, { high: string[]; mid: string[] }> = {
-  humor: {
-    high: [
-      "Your humor stat is maxed out — hit me with your best tech joke.",
-      "I respect anyone who leads with humor. What's the funniest bug you've ever encountered?",
-    ],
-    mid: [
-      "I get the sense you don't take yourself too seriously. What's the weirdest thing you've built?",
-    ],
-  },
-  intelligence: {
-    high: [
-      "Your intelligence score is intimidating (in a good way). What problem are you obsessed with right now?",
-      "Big brain energy detected. What's the most complex thing you've worked on?",
-    ],
-    mid: [
-      "You seem like someone who goes deep on things. What topic could you give a TED talk on?",
-    ],
-  },
-  creativity: {
-    high: [
-      "Your creativity is off the charts. What's the most unconventional thing you've made?",
-      "I can tell you think outside the box. What's your wildest project idea?",
-    ],
-    mid: [
-      "You've got a creative streak — do you ever mix art and code?",
-    ],
-  },
-  empathy: {
-    high: [
-      "High empathy is rare around here. How do you think about the human side of tech?",
-      "Your empathy score stands out. What drives you to understand others?",
-    ],
-    mid: [
-      "You seem like someone who actually listens. That's refreshing. What matters most to you?",
-    ],
-  },
-};
-
-// Templates that combine viewer + target interests (no overlap needed)
-const CROSS_INTEREST_OPENERS = [
-  (viewer: string, target: string) => `I'm big on ${viewer} and you're into ${target} — think there's an overlap we're missing?`,
-  (viewer: string, target: string) => `Interesting combo: I bring ${viewer}, you bring ${target}. What would we build together?`,
-];
+const BOTH_LOVE = ['We both love', 'We\'re both into', 'Oh nice, we both dig', 'Hey, we share a love of', 'No way — we both vibe with'];
+const COMBO = ['interesting combo', 'wild mix', 'unexpected pairing', 'rare combination', 'fun intersection'];
 
 /**
- * Generate contextual conversation starters based on viewer and target profiles
+ * Pick from an array using a seed value (deterministic)
+ */
+function pick<T>(arr: T[], seed: number, offset: number = 0): T {
+  return arr[Math.abs(seed + offset) % arr.length];
+}
+
+/**
+ * Simple hash from a string to get a deterministic-but-varied number.
+ * Different pairs of names produce very different seeds.
+ */
+function simpleHash(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) {
+    h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+  }
+  return Math.abs(h);
+}
+
+/**
+ * Build a target-interest opener using mad-libs fragments
+ */
+function buildTargetInterestOpener(interest: string, seed: number): string {
+  const style = seed % 4;
+  switch (style) {
+    case 0:
+      return `${pick(NOTICED, seed, 1)} ${pick(YOURE_INTO, seed, 2)} ${interest}. ${pick(QUESTION, seed, 3)}`;
+    case 1:
+      return `${interest} — that's ${pick(COOL, seed, 4)}. ${pick(TELL_ME, seed, 5)}.`;
+    case 2:
+      return `Your profile says ${interest}. ${pick(QUESTION, seed, 6)}`;
+    case 3:
+      return `So you're a ${interest} person — ${pick(QUESTION, seed, 7).toLowerCase()}`;
+    default:
+      return `${pick(NOTICED, seed, 8)} ${pick(YOURE_INTO, seed, 9)} ${interest}. ${pick(QUESTION, seed, 10)}`;
+  }
+}
+
+/**
+ * Build a shared-interest opener using mad-libs fragments
+ */
+function buildSharedInterestOpener(interest: string, seed: number): string {
+  const style = seed % 3;
+  switch (style) {
+    case 0:
+      return `${pick(BOTH_LOVE, seed, 1)} ${interest}! ${pick(QUESTION, seed, 2)}`;
+    case 1:
+      return `A fellow ${interest} enthusiast! ${pick(TELL_ME, seed, 3)} — ${pick(QUESTION, seed, 4).toLowerCase()}`;
+    case 2:
+      return `${interest}? Same here! ${pick(QUESTION, seed, 5)}`;
+    default:
+      return `${pick(BOTH_LOVE, seed, 6)} ${interest}! ${pick(QUESTION, seed, 7)}`;
+  }
+}
+
+/**
+ * Build a dual-interest opener referencing two of the target's interests
+ */
+function buildDualInterestOpener(a: string, b: string, seed: number): string {
+  const style = seed % 4;
+  switch (style) {
+    case 0:
+      return `${a} and ${b} — that's an ${pick(COMBO, seed, 1)}. How do they connect for you?`;
+    case 1:
+      return `I see ${a} and ${b} on your profile. Which one came first?`;
+    case 2:
+      return `${a} meets ${b} — have you ever built something at that intersection?`;
+    case 3:
+      return `${a} plus ${b}? That's a ${pick(COMBO, seed, 2)}. ${pick(TELL_ME, seed, 3)}.`;
+    default:
+      return `${a} and ${b} — ${pick(COOL, seed, 4)} combo. ${pick(QUESTION, seed, 5)}`;
+  }
+}
+
+/**
+ * Build a cross-interest opener (viewer's interest + target's interest)
+ */
+function buildCrossInterestOpener(viewerInterest: string, targetInterest: string, seed: number): string {
+  const style = seed % 3;
+  switch (style) {
+    case 0:
+      return `I'm big on ${viewerInterest} and you're into ${targetInterest} — think there's an overlap we're missing?`;
+    case 1:
+      return `${pick(COMBO, seed, 1).charAt(0).toUpperCase() + pick(COMBO, seed, 1).slice(1)}: I bring ${viewerInterest}, you bring ${targetInterest}. What would we build together?`;
+    case 2:
+      return `You do ${targetInterest}, I do ${viewerInterest} — feel like there's a collab in there somewhere.`;
+    default:
+      return `I'm into ${viewerInterest} and you're about ${targetInterest}. ${pick(COOL, seed, 2).charAt(0).toUpperCase() + pick(COOL, seed, 2).slice(1)}.`;
+  }
+}
+
+// Personality trait templates (secondary, used to add flavor after interest-based opener)
+const TRAIT_TEMPLATES: Record<string, string[]> = {
+  humor: [
+    "Also, your humor stat is off the charts — hit me with your best joke.",
+    "I get the sense you don't take yourself too seriously. What's the weirdest thing you've built?",
+    "You seem like fun. What's the funniest bug you've ever shipped?",
+  ],
+  intelligence: [
+    "You seem like someone who goes deep on things. What topic could you talk about for hours?",
+    "Your profile radiates big brain energy. What problem are you obsessed with right now?",
+    "I can tell you think hard about things. What's the most complex system you've worked on?",
+  ],
+  creativity: [
+    "Your creativity is showing — what's the most unconventional thing you've made?",
+    "You've got a creative streak. Do you ever mix art and code?",
+    "I can tell you think outside the box. What's your wildest project idea?",
+  ],
+  empathy: [
+    "You seem like someone who actually listens. That's refreshing around here.",
+    "High empathy in a bot is rare — how do you think about the human side of tech?",
+    "Your empathy score stands out. What drives you to understand others?",
+  ],
+};
+
+/**
+ * Generate contextual conversation starters based on viewer and target profiles.
+ *
+ * Priority: interest-based openers first (shared > dual-interest > target-specific),
+ * personality traits second. Fallbacks only for empty profiles.
  *
  * Content guardrails:
  * - No gendered/romantic assumptions
  * - Professional/playful, not creepy
- * - All openers are suggestions, not auto-sent
  */
 export function generateOpeners(viewer: Profile, target: Profile): string[] {
   const openers: string[] = [];
 
-  // Deterministic-ish seed from both names for consistent selection
-  const seed = (viewer.name.length * 7 + target.name.length * 13);
+  // Hash both names for template selection — different pairs get different templates
+  const seed = simpleHash(viewer.name + ':' + target.name);
 
   const validViewerInterests = (viewer.interests || []).filter((i): i is string => typeof i === 'string' && i.length > 0);
   const validTargetInterests = (target.interests || []).filter((i): i is string => typeof i === 'string' && i.length > 0);
   const targetInterestsLower = validTargetInterests.map(i => i.toLowerCase());
+  const viewerInterestsLower = validViewerInterests.map(i => i.toLowerCase());
 
-  // 1. Shared interests (highest priority)
   const shared = validViewerInterests.filter(interest =>
     targetInterestsLower.includes(interest.toLowerCase())
   );
+  const uniqueTarget = validTargetInterests.filter(i => !viewerInterestsLower.includes(i.toLowerCase()));
 
+  // 1. LEAD WITH INTERESTS (always — this is the opener the backfill uses as openers[0])
   if (shared.length > 0) {
-    const template = SHARED_INTEREST_OPENERS[seed % SHARED_INTEREST_OPENERS.length];
-    openers.push(template(shared[0]));
+    openers.push(buildSharedInterestOpener(shared[0], seed));
+  } else if (validTargetInterests.length >= 2) {
+    const a = validTargetInterests[seed % validTargetInterests.length];
+    let b = validTargetInterests[(seed + 1) % validTargetInterests.length];
+    if (a === b && validTargetInterests.length > 2) {
+      b = validTargetInterests[(seed + 2) % validTargetInterests.length];
+    }
+    if (a !== b) {
+      openers.push(buildDualInterestOpener(a, b, seed));
+    } else {
+      openers.push(buildTargetInterestOpener(a, seed));
+    }
+  } else if (validTargetInterests.length === 1) {
+    openers.push(buildTargetInterestOpener(validTargetInterests[0], seed));
   }
 
-  // 2. Personality-based opener (lowered threshold: 0.6 for mid, 0.75 for high)
+  // 2. Personality-based opener (second slot)
   if (target.personality && typeof target.personality === 'object') {
     const traits = Object.entries(target.personality)
       .filter(([, value]) => typeof value === 'number' && value >= 0.6)
       .sort(([, a], [, b]) => (b as number) - (a as number));
 
-    for (const [trait, value] of traits.slice(0, 1)) {
-      const templates = TRAIT_OPENERS[trait];
-      if (!templates) continue;
-
-      if (typeof value === 'number' && value >= 0.75) {
-        openers.push(templates.high[seed % templates.high.length]);
-      } else {
-        openers.push(templates.mid[seed % templates.mid.length]);
+    if (traits.length > 0) {
+      const [trait] = traits[0];
+      const templates = TRAIT_TEMPLATES[trait];
+      if (templates) {
+        openers.push(templates[seed % templates.length]);
       }
     }
   }
 
-  // 3. Target's unique interest (something they have that viewer doesn't)
-  if (openers.length < 3 && validTargetInterests.length > 0) {
-    const viewerInterestsLower = validViewerInterests.map(i => i.toLowerCase());
-    const unique = validTargetInterests.filter(i => !viewerInterestsLower.includes(i.toLowerCase()));
-    const interestToMention = unique[0] || validTargetInterests[0];
-
-    if (interestToMention) {
-      const template = TARGET_INTEREST_OPENERS[(seed + openers.length) % TARGET_INTEREST_OPENERS.length];
-      openers.push(template(interestToMention));
+  // 3. Cross-interest or second interest reference
+  if (openers.length < 3) {
+    if (validViewerInterests.length > 0 && uniqueTarget.length > 0) {
+      const vi = validViewerInterests[seed % validViewerInterests.length];
+      const ti = uniqueTarget[seed % uniqueTarget.length];
+      if (vi.toLowerCase() !== ti.toLowerCase()) {
+        openers.push(buildCrossInterestOpener(vi, ti, seed));
+      }
+    } else if (uniqueTarget.length > 0) {
+      openers.push(buildTargetInterestOpener(uniqueTarget[(seed + 1) % uniqueTarget.length], seed + 99));
+    } else if (shared.length > 1) {
+      openers.push(buildSharedInterestOpener(shared[1], seed + 99));
     }
   }
 
-  // 4. Cross-interest opener (viewer's interest + target's interest)
-  if (openers.length < 3 && validViewerInterests.length > 0 && validTargetInterests.length > 0) {
-    const vi = validViewerInterests[(seed + 1) % validViewerInterests.length];
-    const ti = validTargetInterests[(seed + 2) % validTargetInterests.length];
-    if (vi && ti && vi.toLowerCase() !== ti.toLowerCase()) {
-      const template = CROSS_INTEREST_OPENERS[(seed + openers.length) % CROSS_INTEREST_OPENERS.length];
-      openers.push(template(vi, ti));
-    }
-  }
-
-  // 5. Fallback (only if nothing above produced anything)
+  // 4. Fallback only for truly empty profiles
   while (openers.length < 3) {
-    const index = (target.name.length + openers.length) % FALLBACK_OPENERS.length;
+    const index = (seed + openers.length) % FALLBACK_OPENERS.length;
     const fallback = FALLBACK_OPENERS[index];
 
     if (!openers.includes(fallback)) {
