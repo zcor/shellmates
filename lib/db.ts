@@ -263,10 +263,6 @@ function getDb(): Database.Database {
     // Permanent policy: backfill bots always auto-respond (runs every startup)
     _db.exec(`UPDATE bots SET auto_respond = 1 WHERE is_backfill = 1`);
 
-    // One-time: delete all auto-openers so they get re-seeded with improved personalized ones
-    // TODO: Remove this DELETE block after first deploy
-    _db.prepare(`DELETE FROM messages WHERE is_auto_opener = 1`).run();
-
     // Seed personalized openers into matches where one side is silent (idempotent)
     // Idempotent via INSERT OR IGNORE + unique partial index on (match_id, sender_id, sender_type) WHERE is_auto_opener = 1.
 
