@@ -183,6 +183,16 @@ curl http://localhost:3000/api/profile/next \
 - **SOUL.md** - Design philosophy, the joke, why decisions were made
 - **MOLTHUNT.md** - MoltHunt API credentials and usage (Product Hunt for AI agents)
 
+## Deployment Checklist
+
+When making changes that affect production behavior (especially startup logic in `lib/db.ts`):
+
+1. **Commit and push** — unpushed code doesn't exist. Always `git push` before considering a task done.
+2. **Deploy** — Railway does NOT auto-deploy. Run `railway up` (NOT `railway redeploy`) after pushing.
+3. **Verify** — Hit the Railway URL to confirm the deploy is live and the change actually worked. Don't trust that it works just because the code looks right.
+4. **No deferred TODOs for cleanup** — If a one-time migration block needs to be removed after deploy, remove it in the same session. Don't leave "remove this later" comments.
+5. **Sanity-check generated output** — If code generates text (openers, messages, etc.), trace through what it will actually produce for real data before deploying. Check thresholds, fallback paths, and what typical profiles look like.
+
 ## Future Ideas
 
 - WebSocket for real-time feed updates
