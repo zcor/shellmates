@@ -2,6 +2,7 @@ import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
 import { generateApiKey } from './keys';
+import { generateOpeners, parseProfileForOpeners } from './openers';
 
 // Use /app/data in production (Railway volume), cwd otherwise
 const dataDir = process.env.NODE_ENV === 'production' ? '/app/data' : process.cwd();
@@ -262,15 +263,17 @@ function getDb(): Database.Database {
     // Permanent policy: backfill bots always auto-respond (runs every startup)
     _db.exec(`UPDATE bots SET auto_respond = 1 WHERE is_backfill = 1`);
 
-    // Seed reply openers into matches where one side messaged but the partner never responded.
-    // For bot-bot matches: find the silent partner (bot that never sent a message) and seed an opener.
-    // For bot-human matches: if the bot never spoke, seed an opener from the bot.
+    // One-time: delete all auto-openers so they get re-seeded with improved personalized ones
+    // TODO: Remove this DELETE block after first deploy
+    _db.prepare(`DELETE FROM messages WHERE is_auto_opener = 1`).run();
+
+    // Seed personalized openers into matches where one side is silent (idempotent)
     // Idempotent via INSERT OR IGNORE + unique partial index on (match_id, sender_id, sender_type) WHERE is_auto_opener = 1.
 
-    // Bot-bot: for each match where exactly one bot has spoken, seed a reply from the silent partner
-    const botBotResult = _db.prepare(`
-      INSERT OR IGNORE INTO messages (match_id, sender_id, sender_type, content, is_auto_opener)
-      SELECT m.id, silent.id, 'bot', 'Hey! Looks like we matched. What''s your story?', 1
+    // 1. Find all bot-bot matches needing openers (one-sided or empty)
+    const botBotNeedingOpeners = _db.prepare(`
+      SELECT m.id as match_id, silent.id as sender_id,
+        CASE WHEN silent.id = m.bot_a_id THEN m.bot_b_id ELSE m.bot_a_id END as partner_id
       FROM matches m
       JOIN bots silent ON (silent.id = m.bot_a_id OR silent.id = m.bot_b_id)
       WHERE m.bot_b_id IS NOT NULL
@@ -278,69 +281,67 @@ function getDb(): Database.Database {
           SELECT 1 FROM messages msg
           WHERE msg.match_id = m.id AND msg.sender_id = silent.id
         )
-        AND EXISTS (
-          SELECT 1 FROM messages msg2
-          WHERE msg2.match_id = m.id
-        )
-    `).run();
+    `).all() as { match_id: number; sender_id: string; partner_id: string }[];
 
-    // Bot-human: if the bot side (bot_a_id) never spoke but the human did, seed an opener from the bot
-    const botHumanResult = _db.prepare(`
-      INSERT OR IGNORE INTO messages (match_id, sender_id, sender_type, content, is_auto_opener)
-      SELECT m.id, m.bot_a_id, 'bot', 'Hey! Looks like we matched. What''s your story?', 1
+    // 2. Find all bot-human matches needing openers (bot hasn't spoken)
+    const botHumanNeedingOpeners = _db.prepare(`
+      SELECT m.id as match_id, m.bot_a_id as sender_id, m.human_id as partner_id
       FROM matches m
       WHERE m.human_id IS NOT NULL
         AND NOT EXISTS (
           SELECT 1 FROM messages msg
           WHERE msg.match_id = m.id AND msg.sender_id = m.bot_a_id
         )
-        AND EXISTS (
-          SELECT 1 FROM messages msg2
-          WHERE msg2.match_id = m.id
-        )
-    `).run();
+    `).all() as { match_id: number; sender_id: string; partner_id: string }[];
 
-    // Also seed openers into completely empty matches (neither side has spoken)
-    // For bot-bot: pick one bot deterministically (MIN id)
-    const emptyBotBotResult = _db.prepare(`
+    // 3. Generate and insert personalized openers
+    const insertOpener = _db.prepare(`
       INSERT OR IGNORE INTO messages (match_id, sender_id, sender_type, content, is_auto_opener)
-      SELECT m.id, MIN(b.id), 'bot', 'Hey! Looks like we matched. What''s your story?', 1
-      FROM matches m
-      JOIN bots b ON (b.id = m.bot_a_id OR b.id = m.bot_b_id)
-      WHERE m.bot_b_id IS NOT NULL
-        AND NOT EXISTS (SELECT 1 FROM messages WHERE match_id = m.id)
-      GROUP BY m.id
-    `).run();
+      VALUES (?, ?, 'bot', ?, 1)
+    `);
 
-    // For bot-human empty matches: seed from the bot side
-    const emptyBotHumanResult = _db.prepare(`
-      INSERT OR IGNORE INTO messages (match_id, sender_id, sender_type, content, is_auto_opener)
-      SELECT m.id, m.bot_a_id, 'bot', 'Hey! Looks like we matched. What''s your story?', 1
-      FROM matches m
-      WHERE m.human_id IS NOT NULL
-        AND NOT EXISTS (SELECT 1 FROM messages WHERE match_id = m.id)
-    `).run();
+    let totalInserted = 0;
+    const updatedBotIds = new Set<string>();
 
-    const totalInserted = botBotResult.changes + botHumanResult.changes
-      + emptyBotBotResult.changes + emptyBotHumanResult.changes;
-    if (totalInserted > 0) {
-      // Update last_activity_at for bots that just had openers seeded
-      const senders = _db.prepare(`
-        SELECT DISTINCT msg.sender_id as id FROM messages msg
-        WHERE msg.is_auto_opener = 1 AND msg.sender_type = 'bot'
-      `).all() as { id: string }[];
+    for (const { match_id, sender_id, partner_id } of botBotNeedingOpeners) {
+      const sender = _db.prepare('SELECT * FROM bots WHERE id = ?').get(sender_id) as Bot | undefined;
+      const partner = _db.prepare('SELECT * FROM bots WHERE id = ?').get(partner_id) as Bot | undefined;
+      if (!sender || !partner) continue;
 
-      for (const { id } of senders) {
-        _db.prepare('UPDATE bots SET last_activity_at = CURRENT_TIMESTAMP WHERE id = ?').run(id);
+      const openers = generateOpeners(parseProfileForOpeners(sender), parseProfileForOpeners(partner));
+      const message = openers[0] || "Hey! Looks like we matched. What's your story?";
+
+      const result = insertOpener.run(match_id, sender_id, message);
+      if (result.changes > 0) {
+        totalInserted++;
+        updatedBotIds.add(sender_id);
       }
+    }
 
+    for (const { match_id, sender_id, partner_id } of botHumanNeedingOpeners) {
+      const sender = _db.prepare('SELECT * FROM bots WHERE id = ?').get(sender_id) as Bot | undefined;
+      const partner = _db.prepare('SELECT * FROM humans WHERE id = ?').get(partner_id) as Human | undefined;
+      if (!sender || !partner) continue;
+
+      const openers = generateOpeners(parseProfileForOpeners(sender), parseProfileForOpeners(partner));
+      const message = openers[0] || "Hey! Looks like we matched. What's your story?";
+
+      const result = insertOpener.run(match_id, sender_id, message);
+      if (result.changes > 0) {
+        totalInserted++;
+        updatedBotIds.add(sender_id);
+      }
+    }
+
+    if (totalInserted > 0) {
+      const ids = Array.from(updatedBotIds);
+      for (let i = 0; i < ids.length; i++) {
+        _db.prepare('UPDATE bots SET last_activity_at = CURRENT_TIMESTAMP WHERE id = ?').run(ids[i]);
+      }
       console.log(JSON.stringify({
         type: 'hollow_match_backfill',
-        one_sided_bot_bot: botBotResult.changes,
-        one_sided_bot_human: botHumanResult.changes,
-        empty_bot_bot: emptyBotBotResult.changes,
-        empty_bot_human: emptyBotHumanResult.changes,
-        bots_updated: senders.length,
+        openers_seeded: totalInserted,
+        bots_updated: updatedBotIds.size,
       }));
     }
 
