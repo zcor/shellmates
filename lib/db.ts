@@ -265,6 +265,28 @@ function getDb(): Database.Database {
     // Seed openers into hollow matches from backfill bots (idempotent)
     // Must run after is_auto_opener migration and auto_respond enforcement
 
+    // Diagnostic: count candidates before inserting
+    const backfillBotCount = (_db.prepare(`SELECT COUNT(*) as c FROM bots WHERE is_backfill = 1`).get() as { c: number }).c;
+    const botBotCandidates = _db.prepare(`
+      SELECT m.id as match_id, m.bot_a_id, m.bot_b_id, MIN(b.id) as sender
+      FROM matches m
+      JOIN bots b ON (b.id = m.bot_a_id OR b.id = m.bot_b_id)
+      WHERE b.is_backfill = 1
+        AND m.bot_b_id IS NOT NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM messages msg
+          JOIN bots sender ON sender.id = msg.sender_id
+          WHERE msg.match_id = m.id AND sender.is_backfill = 1
+        )
+      GROUP BY m.id
+    `).all();
+    console.log(JSON.stringify({
+      type: 'hollow_match_diagnostic',
+      backfill_bots: backfillBotCount,
+      bot_bot_candidates: botBotCandidates.length,
+      sample_candidates: botBotCandidates.slice(0, 5),
+    }));
+
     // Bot-bot: pick exactly one backfill bot per match where no backfill bot has spoken yet
     const botBotResult = _db.prepare(`
       INSERT OR IGNORE INTO messages (match_id, sender_id, sender_type, content, is_auto_opener)
@@ -317,6 +339,12 @@ function getDb(): Database.Database {
         bot_bot_openers: botBotResult.changes,
         bot_human_openers: botHumanResult.changes,
         bots_updated: senders.length,
+      }));
+    } else {
+      console.log(JSON.stringify({
+        type: 'hollow_match_backfill_noop',
+        bot_bot_changes: botBotResult.changes,
+        bot_human_changes: botHumanResult.changes,
       }));
     }
 
