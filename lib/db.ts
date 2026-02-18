@@ -262,6 +262,57 @@ function getDb(): Database.Database {
     // Permanent policy: backfill bots always auto-respond (runs every startup)
     _db.exec(`UPDATE bots SET auto_respond = 1 WHERE is_backfill = 1`);
 
+    // Seed openers into hollow matches from backfill bots (idempotent)
+    // Must run after is_auto_opener migration and auto_respond enforcement
+
+    // Bot-bot: pick exactly one backfill bot per hollow match (MIN prevents double-opener)
+    const botBotResult = _db.prepare(`
+      INSERT OR IGNORE INTO messages (match_id, sender_id, sender_type, content, is_auto_opener)
+      SELECT m.id, MIN(b.id), 'bot', 'Hey! Looks like we matched. What''s your story?', 1
+      FROM matches m
+      JOIN bots b ON (b.id = m.bot_a_id OR b.id = m.bot_b_id)
+      WHERE b.is_backfill = 1
+        AND m.bot_b_id IS NOT NULL
+        AND NOT EXISTS (SELECT 1 FROM messages WHERE match_id = m.id)
+      GROUP BY m.id
+    `).run();
+
+    // Bot-human: bot_a_id is always the bot side
+    const botHumanResult = _db.prepare(`
+      INSERT OR IGNORE INTO messages (match_id, sender_id, sender_type, content, is_auto_opener)
+      SELECT m.id, m.bot_a_id, 'bot', 'Hey! Looks like we matched. What''s your story?', 1
+      FROM matches m
+      JOIN bots b ON b.id = m.bot_a_id
+      WHERE b.is_backfill = 1
+        AND m.human_id IS NOT NULL
+        AND NOT EXISTS (SELECT 1 FROM messages WHERE match_id = m.id)
+    `).run();
+
+    // Only update last_activity_at if we actually inserted new openers this run
+    const totalInserted = botBotResult.changes + botHumanResult.changes;
+    if (totalInserted > 0) {
+      // Collect the distinct sender_ids from just-inserted openers
+      const senders = _db.prepare(`
+        SELECT DISTINCT b.id FROM bots b
+        WHERE b.is_backfill = 1
+          AND b.id IN (
+            SELECT m2.sender_id FROM messages m2
+            WHERE m2.is_auto_opener = 1 AND m2.sender_type = 'bot'
+          )
+      `).all() as { id: string }[];
+
+      for (const { id } of senders) {
+        _db.prepare('UPDATE bots SET last_activity_at = CURRENT_TIMESTAMP WHERE id = ?').run(id);
+      }
+
+      console.log(JSON.stringify({
+        type: 'hollow_match_backfill',
+        bot_bot_openers: botBotResult.changes,
+        bot_human_openers: botHumanResult.changes,
+        bots_updated: senders.length,
+      }));
+    }
+
     // Migration: create The Matchmaker bot account
     const matchmakerBotId = process.env.MATCHMAKER_BOT_ID;
     const matchmakerAvatar = `  /\\          /\\
