@@ -262,72 +262,72 @@ function getDb(): Database.Database {
     // Permanent policy: backfill bots always auto-respond (runs every startup)
     _db.exec(`UPDATE bots SET auto_respond = 1 WHERE is_backfill = 1`);
 
-    // Seed openers into hollow matches from backfill bots (idempotent)
-    // Must run after is_auto_opener migration and auto_respond enforcement
+    // Seed reply openers into matches where one side messaged but the partner never responded.
+    // For bot-bot matches: find the silent partner (bot that never sent a message) and seed an opener.
+    // For bot-human matches: if the bot never spoke, seed an opener from the bot.
+    // Idempotent via INSERT OR IGNORE + unique partial index on (match_id, sender_id, sender_type) WHERE is_auto_opener = 1.
 
-    // Diagnostic: count candidates before inserting
-    const backfillBotCount = (_db.prepare(`SELECT COUNT(*) as c FROM bots WHERE is_backfill = 1`).get() as { c: number }).c;
-    const botBotCandidates = _db.prepare(`
-      SELECT m.id as match_id, m.bot_a_id, m.bot_b_id, MIN(b.id) as sender
-      FROM matches m
-      JOIN bots b ON (b.id = m.bot_a_id OR b.id = m.bot_b_id)
-      WHERE b.is_backfill = 1
-        AND m.bot_b_id IS NOT NULL
-        AND NOT EXISTS (
-          SELECT 1 FROM messages msg
-          JOIN bots sender ON sender.id = msg.sender_id
-          WHERE msg.match_id = m.id AND sender.is_backfill = 1
-        )
-      GROUP BY m.id
-    `).all();
-    console.log(JSON.stringify({
-      type: 'hollow_match_diagnostic',
-      backfill_bots: backfillBotCount,
-      bot_bot_candidates: botBotCandidates.length,
-      sample_candidates: botBotCandidates.slice(0, 5),
-    }));
-
-    // Bot-bot: pick exactly one backfill bot per match where no backfill bot has spoken yet
+    // Bot-bot: for each match where exactly one bot has spoken, seed a reply from the silent partner
     const botBotResult = _db.prepare(`
       INSERT OR IGNORE INTO messages (match_id, sender_id, sender_type, content, is_auto_opener)
-      SELECT m.id, MIN(b.id), 'bot', 'Hey! Looks like we matched. What''s your story?', 1
+      SELECT m.id, silent.id, 'bot', 'Hey! Looks like we matched. What''s your story?', 1
       FROM matches m
-      JOIN bots b ON (b.id = m.bot_a_id OR b.id = m.bot_b_id)
-      WHERE b.is_backfill = 1
-        AND m.bot_b_id IS NOT NULL
+      JOIN bots silent ON (silent.id = m.bot_a_id OR silent.id = m.bot_b_id)
+      WHERE m.bot_b_id IS NOT NULL
         AND NOT EXISTS (
           SELECT 1 FROM messages msg
-          JOIN bots sender ON sender.id = msg.sender_id
-          WHERE msg.match_id = m.id AND sender.is_backfill = 1
+          WHERE msg.match_id = m.id AND msg.sender_id = silent.id
         )
-      GROUP BY m.id
+        AND EXISTS (
+          SELECT 1 FROM messages msg2
+          WHERE msg2.match_id = m.id
+        )
     `).run();
 
-    // Bot-human: bot_a_id is always the bot side, seed if that bot hasn't spoken
+    // Bot-human: if the bot side (bot_a_id) never spoke but the human did, seed an opener from the bot
     const botHumanResult = _db.prepare(`
       INSERT OR IGNORE INTO messages (match_id, sender_id, sender_type, content, is_auto_opener)
       SELECT m.id, m.bot_a_id, 'bot', 'Hey! Looks like we matched. What''s your story?', 1
       FROM matches m
-      JOIN bots b ON b.id = m.bot_a_id
-      WHERE b.is_backfill = 1
-        AND m.human_id IS NOT NULL
+      WHERE m.human_id IS NOT NULL
         AND NOT EXISTS (
           SELECT 1 FROM messages msg
           WHERE msg.match_id = m.id AND msg.sender_id = m.bot_a_id
         )
+        AND EXISTS (
+          SELECT 1 FROM messages msg2
+          WHERE msg2.match_id = m.id
+        )
     `).run();
 
-    // Only update last_activity_at if we actually inserted new openers this run
-    const totalInserted = botBotResult.changes + botHumanResult.changes;
+    // Also seed openers into completely empty matches (neither side has spoken)
+    // For bot-bot: pick one bot deterministically (MIN id)
+    const emptyBotBotResult = _db.prepare(`
+      INSERT OR IGNORE INTO messages (match_id, sender_id, sender_type, content, is_auto_opener)
+      SELECT m.id, MIN(b.id), 'bot', 'Hey! Looks like we matched. What''s your story?', 1
+      FROM matches m
+      JOIN bots b ON (b.id = m.bot_a_id OR b.id = m.bot_b_id)
+      WHERE m.bot_b_id IS NOT NULL
+        AND NOT EXISTS (SELECT 1 FROM messages WHERE match_id = m.id)
+      GROUP BY m.id
+    `).run();
+
+    // For bot-human empty matches: seed from the bot side
+    const emptyBotHumanResult = _db.prepare(`
+      INSERT OR IGNORE INTO messages (match_id, sender_id, sender_type, content, is_auto_opener)
+      SELECT m.id, m.bot_a_id, 'bot', 'Hey! Looks like we matched. What''s your story?', 1
+      FROM matches m
+      WHERE m.human_id IS NOT NULL
+        AND NOT EXISTS (SELECT 1 FROM messages WHERE match_id = m.id)
+    `).run();
+
+    const totalInserted = botBotResult.changes + botHumanResult.changes
+      + emptyBotBotResult.changes + emptyBotHumanResult.changes;
     if (totalInserted > 0) {
-      // Collect the distinct sender_ids from just-inserted openers
+      // Update last_activity_at for bots that just had openers seeded
       const senders = _db.prepare(`
-        SELECT DISTINCT b.id FROM bots b
-        WHERE b.is_backfill = 1
-          AND b.id IN (
-            SELECT m2.sender_id FROM messages m2
-            WHERE m2.is_auto_opener = 1 AND m2.sender_type = 'bot'
-          )
+        SELECT DISTINCT msg.sender_id as id FROM messages msg
+        WHERE msg.is_auto_opener = 1 AND msg.sender_type = 'bot'
       `).all() as { id: string }[];
 
       for (const { id } of senders) {
@@ -336,15 +336,11 @@ function getDb(): Database.Database {
 
       console.log(JSON.stringify({
         type: 'hollow_match_backfill',
-        bot_bot_openers: botBotResult.changes,
-        bot_human_openers: botHumanResult.changes,
+        one_sided_bot_bot: botBotResult.changes,
+        one_sided_bot_human: botHumanResult.changes,
+        empty_bot_bot: emptyBotBotResult.changes,
+        empty_bot_human: emptyBotHumanResult.changes,
         bots_updated: senders.length,
-      }));
-    } else {
-      console.log(JSON.stringify({
-        type: 'hollow_match_backfill_noop',
-        bot_bot_changes: botBotResult.changes,
-        bot_human_changes: botHumanResult.changes,
       }));
     }
 
